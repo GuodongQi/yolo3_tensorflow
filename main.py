@@ -8,7 +8,7 @@ import time
 import urllib.request
 
 out_path = "F:\\wzry"
-total_tast = 4
+total_tast = 5
 
 
 def init():
@@ -63,7 +63,11 @@ def download_video(all_titles, all_links, task_id, page_num, total_pages):
         video_name = path.join(storage_dir, all_links[j].split('/')[-2] + '.mp4')
         if not path.exists(video_name):
             urllib.request.urlretrieve(all_links[j], video_name)
-        print('page:{}/{}, video:{}/{}, storage in {} '.format(page_num, total_pages, j + 1, len(all_links), video_name))
+            print('page:{}/{}, video:{}/{}, storage in {} '.format(page_num + 1, total_pages, j + 1, len(all_links),
+                                                                   video_name))
+        else:
+            print('page:{}/{}, video:{}/{}, {} has existed'.format(page_num + 1, total_pages, j + 1, len(all_links),
+                                                                   video_name))
 
 
 def main():
@@ -75,7 +79,9 @@ def main():
             p.apply_async(download_video, (all_titles, all_links, j, i, total_pages))
         p.close()
         p.join()
+        print('page{} has been done'.format(i + 1))
         next_page.click()
+        time.sleep(2)
     return
 
 
