@@ -8,11 +8,11 @@ import time
 import urllib.request
 
 out_path = "F:\\wzry"
-total_tast = 5
+total_tast = 10
 
 
 def init():
-    browser = webdriver.Chrome(executable_path="C:\\Users\\qiguodong\\Desktop\\chromedriver.exe")
+    browser = webdriver.Chrome(executable_path="C:\\Users\\guodong\\Desktop\\chromedriver.exe")
     browser.get('https://open.egame.qq.com/material/moment')
 
     # time.sleep(2)
@@ -81,7 +81,7 @@ def main():
         p.join()
         print('page{} has been done'.format(i + 1))
         next_page.click()
-        time.sleep(2)
+        # time.sleep(2)
     return
 
 
