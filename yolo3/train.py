@@ -20,7 +20,7 @@ class YOLO():
 
         self.batch_size = 8
 
-        self.learn_rate = 1e-3
+        self.learn_rate = 1e-2
         self.lambda_coord = 5
         self.lambda_noobj = 0.5
         self.iou_threshold = 0.1

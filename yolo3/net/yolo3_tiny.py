@@ -250,7 +250,17 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
     pred_boxes, grid = pred
 
     masks = tf.where(gts[..., 3] > 0, tf.ones_like(gts[..., 3]), tf.zeros_like(gts[..., 3]), name='debug_mask')
-    ious = box_iou(pred_boxes[..., :4], gts[..., :4])
+
+    i_height, i_width = input_size
+    scale_tensor = []
+    for g in grid:
+        batchsize, g_h, g_w, g_n, _ = g.get_shape().as_list()
+        scale = i_height / g_h
+        scale_tensor.append(tf.constant(scale, tf.float32, [batchsize, g_h * g_w, g_n, 2]))
+    scale_tensor = tf.concat(scale_tensor, 1)
+    xy = pred_boxes[..., :2] * scale_tensor
+    x_y_ = gts[..., :2] * scale_tensor
+    ious = box_iou(tf.concat([xy, pred_boxes[..., 2:4]], -1), tf.concat([x_y_, gts[..., 2:4]], -1))
     ignore_mask = tf.where(ious > iou_threshold, tf.ones_like(ious), tf.zeros_like(ious), name='debug_ignore_mask')
     loss_xy = tf.reduce_sum(
         lambda_coord * masks * tf.reduce_sum(binary_cross(labels=gts[..., :2], pred=pred_boxes[..., :2]), -1),
