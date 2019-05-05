@@ -5,15 +5,14 @@ def box_iou(b1, b2):
     '''Return iou tensor
     Parameters
     ----------
-    b1: tensor, shape=(i1,...,iN, 4), xywh
-    b2: tensor, shape=(j, 4), xywh
+    b1: tensor, shape=(batch,... 4), xywh
+    b2: tensor, shape=(batch,... 4), xywh
     Returns
     -------
     iou: tensor, shape=(i1,...,iN, j)
     '''
 
     # Expand dim to apply broadcasting.
-    b1 = tf.expand_dims(b1, -2)
     b1_xy = b1[..., :2]
     b1_wh = b1[..., 2:4]
     b1_wh_half = b1_wh / 2.
@@ -21,7 +20,6 @@ def box_iou(b1, b2):
     b1_maxes = b1_xy + b1_wh_half
 
     # Expand dim to apply broadcasting.
-    b2 = tf.expand_dims(b2, 0)
     b2_xy = b2[..., :2]
     b2_wh = b2[..., 2:4]
     b2_wh_half = b2_wh / 2.
@@ -37,6 +35,19 @@ def box_iou(b1, b2):
     iou = intersect_area / (b1_area + b2_area - intersect_area)
 
     return iou
+
+
+def xy2wh_np(b):
+    """
+    :param b:  list xmin ymin xmax ymax
+    :return: shape=(...,4) x0 y0 w h
+    """
+    xmin, ymin, xmax, ymax = b
+    x0 = (xmin + xmax) / 2.0
+    y0 = (ymin + ymax) / 2.0
+    w = xmax - xmin
+    h = ymax - ymin
+    return [x0, y0, w, h]
 
 
 def xy2wh(b):

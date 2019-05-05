@@ -4,10 +4,11 @@ import random
 
 classes = ['blood']
 
-wd = os.path.dirname(os.getcwd())
+# wd = os.path.dirname(os.getcwd())
 
+wd = 'C:\\Users\\qiguodong\\'
 
-list_file_train = open('C:\\Users\\guodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\model_data\\train.txt', 'w')
+list_file_train = open('C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\model_data\\train.txt', 'w')
 
 annotation_files = os.listdir(os.path.join(wd, 'dataset', 'annotation'))
 random.shuffle(annotation_files)
