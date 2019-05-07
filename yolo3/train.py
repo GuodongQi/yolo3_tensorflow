@@ -6,7 +6,7 @@ import time
 from tensorflow.python import debug as tf_debug
 
 from net.yolo3_net import model, loss
-from util.box_util import xy2wh_np
+from util.box_util import xy2wh_np, wh2xy_np
 from util.image_util import read_image_and_lable
 
 
@@ -19,14 +19,12 @@ class YOLO():
         self.pretrain_path = self.log_path
         # self.pretrain_path = ''
 
-        self.batch_size = 16
+        self.batch_size = 4
 
-        self.learn_rate = 1e-4
-        self.lambda_coord = 5
-        self.lambda_noobj = 0.5
-        self.iou_threshold = 0.4
-
-        self.gt_max_size = 10
+        self.learn_rate = 1e-3
+        self.lambda_coord = 1
+        self.lambda_noobj = 1
+        self.iou_threshold = 0.7
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
@@ -113,7 +111,7 @@ class YOLO():
         img_tensor = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
         loss_tensor = tf.placeholder(tf.float32)
         tf.summary.scalar('losses', loss_tensor)
-        tf.summary.image('img', img_tensor)
+        tf.summary.image('img', img_tensor, self.batch_size)
         summary = tf.summary.merge_all()
 
         config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
@@ -140,11 +138,25 @@ class YOLO():
             print('step:{} loss:{}'.format(step, losses_))
 
             if (step + 1) % 10 == 1:  # for visible
-                # boxes, grid = pred_
-                # score = boxes[..., 4:5] * boxes[..., 5:]
-                # # (score > 0.5)
+                boxes, grid = pred_
+                score = boxes[..., 4:5] * boxes[..., 5:]
+                vis_img = []
+
+                for b in range(self.batch_size):
+                    idx = np.where(score[b] > 0.5)
+                    box_select = boxes[b][idx[:2]]
+                    box_xywh = box_select[:, :4]
+                    box_xyxy = wh2xy_np(box_xywh)
+                    box_socre = score[b][idx]
+                    clsid = idx[2]
+
+                    per_img = (img[b] + 1) * 128
+                    for bbox in box_xyxy:
+                        per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
+                                                tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
+                    vis_img.append(per_img)
                 ss = sess.run(summary, feed_dict={
-                    img_tensor: img,
+                    img_tensor: np.array(vis_img),
                     loss_tensor: losses_
                 })
                 writer.add_summary(ss, step)

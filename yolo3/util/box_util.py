@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 def box_iou(b1, b2):
@@ -50,6 +51,19 @@ def xy2wh_np(b):
     w = xmax - xmin
     h = ymax - ymin
     return [x0, y0, w, h]
+
+
+def wh2xy_np(b):
+    """
+    :param b: shape=(...,4) x0 y0 w h
+    :return: shape=(...,4) xmin ymin xmax ymax
+    """
+    x0, y0, w, h = b[..., 0:1], b[..., 1:2], b[..., 2:3], b[..., 3:4]
+    xmin = x0 - w / 2.0
+    xmax = x0 + w / 2.0
+    ymin = y0 - h / 2.0
+    ymax = y0 + h / 2.0
+    return np.concatenate([xmin, ymin, xmax, ymax], -1)
 
 
 def xy2wh(b):
