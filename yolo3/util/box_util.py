@@ -6,13 +6,14 @@ def box_iou(b1, b2):
     Parameters
     ----------
     b1: tensor, shape=(batch,... 4), xywh
-    b2: tensor, shape=(batch,... 4), xywh
+    b2: tensor, shape=(j, 4), xywh
     Returns
     -------
     iou: tensor, shape=(i1,...,iN, j)
     '''
 
     # Expand dim to apply broadcasting.
+    b1 = tf.expand_dims(b1, -2)
     b1_xy = b1[..., :2]
     b1_wh = b1[..., 2:4]
     b1_wh_half = b1_wh / 2.
@@ -20,6 +21,7 @@ def box_iou(b1, b2):
     b1_maxes = b1_xy + b1_wh_half
 
     # Expand dim to apply broadcasting.
+    b2 = tf.expand_dims(b2, 0)
     b2_xy = b2[..., :2]
     b2_wh = b2[..., 2:4]
     b2_wh_half = b2_wh / 2.
@@ -32,7 +34,7 @@ def box_iou(b1, b2):
     intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
     b1_area = b1_wh[..., 0] * b1_wh[..., 1]
     b2_area = b2_wh[..., 0] * b2_wh[..., 1]
-    iou = intersect_area / (b1_area + b2_area - intersect_area)
+    iou = tf.math.divide(intersect_area, b1_area + b2_area - intersect_area, name='iou')
 
     return iou
 

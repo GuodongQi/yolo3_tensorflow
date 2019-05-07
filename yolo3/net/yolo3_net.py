@@ -17,37 +17,150 @@ input = (640 * 320)
 """
 
 leaky_alpha = 0.1
+mobilenet = False
+is_tiny = True
 
 
-def conv_block(x, filters, stride, out_channel, name):
+def conv_block(x, filters, stride, out_channel, name='', leaky_relu=True):
     """
     :param x: input :nhwc
     :param filters: [f_w, f_h]
     :param stride:  int
     :param out_channel: int, out_channel
     :param name: str
+    :param leaky_relu: boolean
     :return: depwise and pointwise out
     """
-    with tf.name_scope(name):
+    with tf.name_scope('' + name):
         in_channel = int(x.shape[3])
-        mobilenet = True
         if mobilenet:
             with tf.name_scope('depthwise'):
-                depthwise_weight = tf.Variable(tf.random_normal([filters[0], filters[1], in_channel, 1], 0, 0.01))
+                depthwise_weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, 1], 0, 0.01))
                 x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
             with tf.name_scope('pointwise'):
-                pointwise_weight = tf.Variable(tf.random_normal([1, 1, in_channel, out_channel], 0, 0.01))
+                pointwise_weight = tf.Variable(tf.truncated_normal([1, 1, in_channel, out_channel], 0, 0.01))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+                if leaky_relu:
+                    x = tf.layers.batch_normalization(x, name=name)
+                    x = tf.nn.relu6(x, leaky_alpha)
+                else:
+                    bias = tf.Variable(tf.truncated_normal(x.shape, 0, 0.01))
+                    x += bias
+
         else:
             with tf.name_scope('cnn'):
-                weight = tf.Variable(tf.random_normal([filters[0], filters[1], in_channel, out_channel], 0, 0.01))
+                weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, out_channel], 0, 0.01))
                 x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
-        x = tf.layers.batch_normalization(x, name=name)
-        x = tf.nn.leaky_relu(x, leaky_alpha)
+                if leaky_relu:
+                    x = tf.layers.batch_normalization(x, name=name)
+                    x = tf.nn.leaky_relu(x, leaky_alpha)
+                else:
+                    bias = tf.Variable(tf.truncated_normal(x.shape, 0, 0.01))
+                    x += bias
     return x
 
 
-def body(x):
+def residual(x, out_channel):
+    if mobilenet:
+        return
+    else:
+        shortcut = x
+        x = conv_block(x, [1, 1], [1, 1], out_channel // 2)
+        x = conv_block(x, [3, 3], [1, 1], out_channel)
+        x += shortcut
+        return x
+
+
+def full_body(x):
+    """
+    yolo3_tiny build by mobilenet
+    :param x:
+    :return:
+    """
+    x = conv_block(x, [3, 3], [1, 1], 32)
+
+    # down sample
+    x = conv_block(x, [3, 3], [2, 2], 64)
+    for i in range(1):
+        x = residual(x, 64)
+
+    # down sample
+    x = conv_block(x, [3, 3], [2, 2], 128)
+    for i in range(2):
+        x = residual(x, 128)
+
+    # down sample
+    x = conv_block(x, [3, 3], [2, 2], 256)
+    for i in range(8):
+        x = residual(x, 256)
+    route2 = x
+
+    # down sample
+    x = conv_block(x, [3, 3], [2, 2], 512)
+    for i in range(8):
+        x = residual(x, 512)
+    route1 = x
+
+    # down sample
+    x = conv_block(x, [3, 3], [2, 2], 1024)
+    for i in range(4):
+        x = residual(x, 1024)
+
+    return x, route1, route2
+
+
+def full_head(x, route1, route2, num_class, anchors):
+    with tf.name_scope('head_layer1'):
+        x = conv_block(x, [1, 1], [1, 1], 512)
+        x = conv_block(x, [3, 3], [1, 1], 1024)
+        x = conv_block(x, [1, 1], [1, 1], 512)
+        x = conv_block(x, [3, 3], [1, 1], 1024)
+        x_route = x
+        x = conv_block(x, [1, 1], [1, 1], 512)
+        x = conv_block(x, [3, 3], [1, 1], 1024)
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head1", False)
+        fe1 = x
+        fe1, grid1 = yolo(fe1, anchors)
+
+    with tf.name_scope('head_layer2'):
+        x = conv_block(x_route, [1, 1], [1, 1], 256)
+        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 256, 256], 0, 0.01))
+        x = tf.nn.conv2d_transpose(x, transpose_weight,
+                                   [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
+                                   [1, 2, 2, 1], 'SAME')
+        x = tf.concat([x, route1], 3)
+        x = conv_block(x, [1, 1], [1, 1], 256)
+        x = conv_block(x, [3, 3], [1, 1], 512)
+        x = conv_block(x, [1, 1], [1, 1], 256)
+        x = conv_block(x, [3, 3], [1, 1], 512)
+        x_route = x
+        x = conv_block(x, [1, 1], [1, 1], 256)
+        x = conv_block(x, [3, 3], [1, 1], 512)
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head2", False)
+        fe2 = x
+        fe2, grid2 = yolo(fe2, anchors)
+
+    with tf.name_scope('head_layer3'):
+        x = conv_block(x_route, [1, 1], [1, 1], 128)
+        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 128, 128], 0, 0.01))
+        x = tf.nn.conv2d_transpose(x, transpose_weight,
+                                   [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
+                                   [1, 2, 2, 1], 'SAME')
+        x = tf.concat([x, route2], 3)
+        x = conv_block(x, [1, 1], [1, 1], 128)
+        x = conv_block(x, [3, 3], [1, 1], 256)
+        x = conv_block(x, [1, 1], [1, 1], 128)
+        x = conv_block(x, [3, 3], [1, 1], 256)
+        x = conv_block(x, [1, 1], [1, 1], 128)
+        x = conv_block(x, [3, 3], [1, 1], 156)
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head3", False)
+        fe3 = x
+        fe3, grid3 = yolo(fe3, anchors)
+    fe = tf.concat([fe1, fe2, fe3], 1)
+    return fe, grid1, grid2, grid3
+
+
+def tiny_body(x):
     """
     yolo3_tiny build by mobilenet
     :param x:
@@ -77,7 +190,7 @@ def body(x):
     return x, x_route
 
 
-def head(x, x_route1, num_class, anchors):
+def tiny_head(x, x_route1, num_class, anchors):
     with tf.name_scope('head_layer1'):
         x = conv_block(x, [1, 1], [1, 1], 256, 'conv8')
         x_route2 = x
@@ -88,7 +201,7 @@ def head(x, x_route1, num_class, anchors):
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route2, [1, 1], [1, 1], 128, 'conv10')
-        transpose_weight = tf.Variable(tf.random_normal([1, 1, 128, 128], 0, 0.01))
+        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 128, 128], 0, 0.01))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
@@ -113,14 +226,14 @@ def yolo(f, anchors):
     anchor_tensor = tf.constant(anchors, tf.float32)
     batchsize = f.shape[0]
     f = tf.reshape(f, [f.shape[0], f.shape[1], f.shape[2], 3, -1])
-    grid_x = tf.tile(tf.reshape(tf.range(f.shape[1]), [1, -1, 1, 1]), [batchsize, 1, f.shape[2], 1])
-    grid_y = tf.tile(tf.reshape(tf.range(f.shape[2]), [1, 1, -1, 1]), [batchsize, f.shape[1], 1, 1])
+    grid_y = tf.tile(tf.reshape(tf.range(f.shape[1]), [1, -1, 1, 1]), [batchsize, 1, f.shape[2], 1])
+    grid_x = tf.tile(tf.reshape(tf.range(f.shape[2]), [1, 1, -1, 1]), [batchsize, f.shape[1], 1, 1])
     grid = tf.tile(tf.cast(tf.concat([grid_x, grid_y], -1), tf.float32)[:, :, :, tf.newaxis, :], (1, 1, 1, 3, 1))
 
-    # box_xy = (tf.nn.sigmoid(f[..., :2]) + grid) / tf.cast(grid.shape[::-1][2:4], tf.float32, )
-    box_xy = (tf.nn.sigmoid(f[..., :2]))
-    # box_wh = (tf.exp(f[..., 2:4]) * anchor_tensor) / tf.cast(grid.shape[::-1][1:3], tf.float32)
-    box_wh = tf.exp(f[..., 2:4]) * anchor_tensor
+    # box_xy = (tf.nn.sigmoid(f[..., :2]))
+    # box_wh = tf.exp(f[..., 2:4]) * anchor_tensor
+    box_xy = (tf.nn.sigmoid(f[..., :2]) + grid) / tf.cast(grid.shape[::-1][2:4], tf.float32, )
+    box_wh = tf.nn.sigmoid(f[..., 2:4]) * anchor_tensor
     box_confidence = tf.nn.sigmoid(f[..., 4:5])
     classes_score = tf.nn.sigmoid(f[..., 5:])
     feas = tf.reshape(tf.concat([box_xy, box_wh, box_confidence, classes_score], -1), [batchsize, -1, 3, f.shape[4]])
@@ -129,15 +242,21 @@ def yolo(f, anchors):
 
 def model(x, num_classes, anchors, cal_loss=False, score_threshold=0.3):
     batchsize, height, width, _ = x.get_shape().as_list()
-    x, x_route = body(x)
-    y, *grid = head(x, x_route, num_classes, anchors)
-    # grid = tf.Variable(grid, False, name='debug_raw_grid')
+    if is_tiny:
+        x, x_route = tiny_body(x)
+        y, *grid = tiny_head(x, x_route, num_classes, anchors)
+    else:
+        x, route1, route2 = full_body(x)
+        y, *grid = full_head(x, route1, route2, num_classes, anchors)
+
     box_xy, box_wh, box_confidence, classes_score = y[..., :2], y[..., 2:4], y[..., 4:5], y[..., 5:]
-    # box_xy *= tf.constant([width, height], tf.float32)
+    box_xy *= tf.constant([width, height], tf.float32)
     # box_wh *= tf.constant([width, height], tf.float32)
+
     if cal_loss:
         boxe = tf.concat([box_xy, box_wh, box_confidence, classes_score], -1, name='debug_pred')
         return boxe, grid
+
     boxes = wh2xy(tf.concat([box_xy, box_wh], -1))
     score = box_confidence * classes_score
 
@@ -244,36 +363,59 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
     """
 
     def binary_cross(labels, pred):
-        return -labels * tf.log(pred + 0.0001) - (1 - labels) * tf.log(1.0001 - pred)
+        pred = tf.clip_by_value(pred, 1e-5, 1 - 1e-5)
+        return -labels * tf.math.log(pred)
         # return tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=pred)
 
     pred_boxes, grid = pred
 
-    masks = tf.where(gts[..., 3] > 0, tf.ones_like(gts[..., 3]), tf.zeros_like(gts[..., 3]), name='debug_mask')
-
+    masks = gts[..., 4]
+    batchsize = masks.shape[0].value
     i_height, i_width = input_size
+
+    # cal ignore_mask
+    ignore_mask = []
+    for b in range(batchsize):
+        true_box = tf.boolean_mask(gts[b:b + 1, ..., :4], masks[b:b + 1], name='debug_true_box')
+        with tf.name_scope('debug_iou'):
+            ious = box_iou(pred_boxes[b:b + 1, ..., :4], true_box)
+        ious = tf.reduce_max(ious, -1)
+        ignore_mask_ = tf.where(ious > iou_threshold, tf.zeros_like(ious), tf.ones_like(ious))
+        ignore_mask.append(ignore_mask_)
+    ignore_mask = tf.concat(ignore_mask, 0, name='debug_ignore_mask')
+
     scale_tensor = []
+    grid_tensor = []
     for g in grid:
-        batchsize, g_h, g_w, g_n, _ = g.get_shape().as_list()
+        _, g_h, g_w, g_n, _ = g.get_shape().as_list()
         scale = i_height / g_h
         scale_tensor.append(tf.constant(scale, tf.float32, [batchsize, g_h * g_w, g_n, 2]))
-    scale_tensor = tf.concat(scale_tensor, 1)
-    xy = pred_boxes[..., :2] * scale_tensor
-    x_y_ = gts[..., :2] * scale_tensor
-    ious = box_iou(tf.concat([xy, pred_boxes[..., 2:4]], -1), tf.concat([x_y_, gts[..., 2:4]], -1))
-    ignore_mask = tf.where(ious > iou_threshold, tf.ones_like(ious), tf.zeros_like(ious), name='debug_ignore_mask')
+        grid_tensor.append(tf.reshape(g, [batchsize, g_h * g_w, g_n, 2]))
+    scale_tensor = tf.concat(scale_tensor, 1, name="debug_scale")
+    grid_tensor = tf.concat(grid_tensor, 1, name="debug_grid")
+
+    raw_pred_xy = tf.math.subtract(tf.math.divide(pred_boxes[..., :2], scale_tensor, name='debug_pred_div_scale'),
+                                   grid_tensor,
+                                   name='debug_raw_pred_xy')
+    raw_gt_xy = tf.math.subtract(gts[..., :2] / scale_tensor,
+                                 tf.tile(masks[..., tf.newaxis], [1, 1, 1, 2]) * grid_tensor, name='debug_raw_gts_xy')
+
     loss_xy = tf.reduce_sum(
-        lambda_coord * masks * tf.reduce_sum(binary_cross(labels=gts[..., :2], pred=pred_boxes[..., :2]), -1),
+        # lambda_coord * masks * tf.reduce_sum(binary_cross(labels=gts[..., :2], pred=pred_boxes[..., :2]), -1),
+        lambda_coord * masks * tf.reduce_sum(binary_cross(labels=raw_gt_xy, pred=raw_pred_xy), -1),
         # lambda_coord * masks * tf.reduce_sum(tf.abs(gts[..., :2] - pred_boxes[..., :2]), -1),
-        name='debug_loss_xy')
+        name='debug_loss_xy') / gts.shape[0].value
     loss_wh = tf.reduce_sum(lambda_coord * masks * tf.reduce_sum(
-        tf.square(tf.sqrt(pred_boxes[..., 2:4]) - tf.sqrt(gts[..., 2:4])), -1), name='debug_loss_wh')
+        tf.square(tf.sqrt(pred_boxes[..., 2:4]) - tf.sqrt(gts[..., 2:4])), -1), name='debug_loss_wh') / gts.shape[
+                  0].value
     loss_confidence = tf.reduce_sum(
         masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') + tf.reduce_sum(
-        lambda_noobj * (1 - masks) * binary_cross(labels=masks, pred=pred_boxes[..., 4]) * ignore_mask,
-        name='debug_loss_noobj')
+        lambda_noobj * (1 - masks) * binary_cross(labels=(1 - masks), pred=(1 - pred_boxes[..., 4])) * ignore_mask,
+        name='debug_loss_noobj') / gts.shape[0].value
     loss_cls = tf.reduce_sum(
         masks * tf.reduce_sum(
-            binary_cross(labels=gts[..., 4:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
-    )
-    return (loss_xy + loss_wh + loss_confidence + loss_cls) / gts.shape[0].value
+            binary_cross(labels=gts[..., 5:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
+    ) / gts.shape[0].value
+    p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_confidence", loss_confidence, "loss_cls", loss_cls)
+    with tf.control_dependencies([p]):
+        return loss_xy + loss_wh + loss_confidence + loss_cls
