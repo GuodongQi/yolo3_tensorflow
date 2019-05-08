@@ -6,7 +6,7 @@ import time
 from tensorflow.python import debug as tf_debug
 
 from net.yolo3_net import model, loss
-from util.box_util import xy2wh_np, wh2xy_np
+from util.box_util import xy2wh_np, wh2xy_np, box_anchor_iou
 from util.image_util import read_image_and_lable
 
 
@@ -21,10 +21,10 @@ class YOLO():
 
         self.batch_size = 4
 
-        self.learn_rate = 1e-3
+        self.learn_rate = 1e-4
         self.lambda_coord = 1
-        self.lambda_noobj = 1
-        self.iou_threshold = 0.7
+        self.lambda_noobj = 0.5
+        self.iou_threshold = 0.5
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
@@ -42,7 +42,7 @@ class YOLO():
         with open(self.anchor_path) as f:
             anchors = f.readline()
         anchors = [float(x) for x in anchors.split(',')]
-        return np.array(anchors).reshape(2)
+        return np.array(anchors).reshape(-1, 2)
 
     def _get_classes(self):
         """loads the classes"""
@@ -56,29 +56,29 @@ class YOLO():
         labels = []
         for idx in range(len(gts)):
             res = read_image_and_lable(gts[idx], self.hw, self.anchors)
-            k = 0
+            kk = 0
             while not res:
-                res = read_image_and_lable(gts[k], self.hw, self.anchors)
-                k += 1
+                res = read_image_and_lable(gts[kk], self.hw, self.anchors)
+                kk += 1
             img, _label, self.anchors = res
+
             img_files.append(img)
+            _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
 
             gds = []
-            for g_shape in grid_shape:
+            for g_id, g_shape in enumerate(grid_shape):
+                anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
                 gd = np.zeros(g_shape[1:3] + [3, 5 + len(self.classes)])
                 h_r = self.hw[0] / gd.shape[0]
                 w_r = self.hw[1] / gd.shape[1]
-                for per_label in _label:
-                    x0, y0, w, h = xy2wh_np(per_label[:4])
+                for per_label in _label_:
+                    x0, y0, w, h = per_label[:4]
                     if w == 0 or h == 0:
                         continue
                     i = int(np.floor(x0 / w_r))
                     j = int(np.floor(y0 / h_r))
-                    k = 0
-                    if gd[j, i, k, 5 + int(per_label[4])] == 1:
-                        k += 1
-                        if k == 3:
-                            continue
+                    box_iou = box_anchor_iou(anchors, per_label[2:4])
+                    k = np.argmax(box_iou)
                     # gd[j, i, k, 0] = x0 / w_r - i
                     # gd[j, i, k, 1] = y0 / h_r - j
                     gd[j, i, k, 0] = x0
@@ -90,6 +90,7 @@ class YOLO():
 
                 gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
             labels.append(np.concatenate(gds, 0))
+
         img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
         return img_files, labels
 
@@ -104,7 +105,7 @@ class YOLO():
         losses = loss(pred, self.label, self.hw, self.lambda_coord, self.lambda_noobj, self.iou_threshold)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         op = opt.minimize(losses)
-        # img, label = self.generate_data(self.gts[0:0 + 2*self.batch_size], grid_shape)
+        # img, label = self.generate_data(self.gts[0:0 + 2 * self.batch_size], grid_shape)
 
         # summary
         writer = tf.summary.FileWriter(self.log_path)
@@ -116,7 +117,8 @@ class YOLO():
 
         config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
         sess = tf.Session(config=config)
-        # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+        # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
         saver = tf.train.Saver()
         if not len(self.pretrain_path):
             init = tf.global_variables_initializer()
@@ -143,7 +145,7 @@ class YOLO():
                 vis_img = []
 
                 for b in range(self.batch_size):
-                    idx = np.where(score[b] > 0.5)
+                    idx = np.where(score[b] > 0.2)
                     box_select = boxes[b][idx[:2]]
                     box_xywh = box_select[:, :4]
                     box_xyxy = wh2xy_np(box_xywh)

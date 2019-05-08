@@ -2,6 +2,64 @@ import tensorflow as tf
 import numpy as np
 
 
+def box_anchor_iou(b1, b2):
+    '''Return iou tensor
+    Parameters
+    ----------
+    b1: tensor, shape=(batch,... 2), wh
+    b2: tensor, shape=(j, 2), wh
+    Returns
+    -------
+    iou: tensor, shape=(i1,...,iN, j)
+    '''
+
+    # Expand dim to apply broadcasting.
+    b1 = np.expand_dims(b1, -2)
+    b1_mins = - b1 / 2
+    b1_maxes = b1 / 2
+
+    # Expand dim to apply broadcasting.
+    b2 = np.expand_dims(b2, 0)
+    b2_mins = -b2 / 2
+    b2_maxes = b2 / 2
+
+    intersect_mins = np.maximum(b1_mins, b2_mins)
+    intersect_maxes = np.minimum(b1_maxes, b2_maxes)
+    intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
+    intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
+    b1_area = b1[..., 0] * b1[..., 1]
+    b2_area = b2[..., 0] * b2[..., 1]
+    iou = intersect_area / (b1_area + b2_area - intersect_area)
+
+    return iou
+
+
+def xy2wh_np(b):
+    """
+    :param b:  list xmin ymin xmax ymax
+    :return: shape=(...,4) x0 y0 w h
+    """
+    xmin, ymin, xmax, ymax = b[..., 0:1], b[..., 1:2], b[..., 2:3], b[..., 3:4]
+    x0 = (xmin + xmax) / 2.0
+    y0 = (ymin + ymax) / 2.0
+    w = xmax - xmin
+    h = ymax - ymin
+    return np.concatenate([x0, y0, w, h], -1)
+
+
+def wh2xy_np(b):
+    """
+    :param b: shape=(...,4) x0 y0 w h
+    :return: shape=(...,4) xmin ymin xmax ymax
+    """
+    x0, y0, w, h = b[..., 0:1], b[..., 1:2], b[..., 2:3], b[..., 3:4]
+    xmin = x0 - w / 2.0
+    xmax = x0 + w / 2.0
+    ymin = y0 - h / 2.0
+    ymax = y0 + h / 2.0
+    return np.concatenate([xmin, ymin, xmax, ymax], -1)
+
+
 def box_iou(b1, b2):
     '''Return iou tensor
     Parameters
@@ -38,32 +96,6 @@ def box_iou(b1, b2):
     iou = tf.math.divide(intersect_area, b1_area + b2_area - intersect_area, name='iou')
 
     return iou
-
-
-def xy2wh_np(b):
-    """
-    :param b:  list xmin ymin xmax ymax
-    :return: shape=(...,4) x0 y0 w h
-    """
-    xmin, ymin, xmax, ymax = b
-    x0 = (xmin + xmax) / 2.0
-    y0 = (ymin + ymax) / 2.0
-    w = xmax - xmin
-    h = ymax - ymin
-    return [x0, y0, w, h]
-
-
-def wh2xy_np(b):
-    """
-    :param b: shape=(...,4) x0 y0 w h
-    :return: shape=(...,4) xmin ymin xmax ymax
-    """
-    x0, y0, w, h = b[..., 0:1], b[..., 1:2], b[..., 2:3], b[..., 3:4]
-    xmin = x0 - w / 2.0
-    xmax = x0 + w / 2.0
-    ymin = y0 - h / 2.0
-    ymax = y0 + h / 2.0
-    return np.concatenate([xmin, ymin, xmax, ymax], -1)
 
 
 def xy2wh(b):
