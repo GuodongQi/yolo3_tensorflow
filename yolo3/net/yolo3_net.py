@@ -18,7 +18,7 @@ input = (640 * 320)
 
 leaky_alpha = 0.1
 mobilenet = False
-is_tiny = False
+is_tiny = True
 
 
 def conv_block(x, filters, stride, out_channel, name='', leaky_relu=True):
@@ -201,7 +201,7 @@ def tiny_head(x, x_route1, num_class, anchors):
         x = conv_block(x, [3, 3], [1, 1], 512, 'conv9')
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head1")
         fe1 = x
-        fe1, grid1 = yolo(fe1, anchors)
+        fe1, grid1 = yolo(fe1, anchors[[0, 1, 2]])
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route2, [1, 1], [1, 1], 128, 'conv10')
@@ -213,7 +213,7 @@ def tiny_head(x, x_route1, num_class, anchors):
         x = conv_block(x, [3, 3], [1, 1], 256, 'conv11')
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head2")
         fe2 = x
-        fe2, grid2 = yolo(fe2, anchors)
+        fe2, grid2 = yolo(fe2, anchors[[3, 4, 5]])
 
     fe = tf.concat([fe1, fe2], 1)
     return fe, grid1, grid2
@@ -233,14 +233,12 @@ def yolo(f, anchors):
     grid_x = tf.tile(tf.reshape(tf.range(f.shape[2]), [1, 1, -1, 1]), [batchsize, f.shape[1], 1, 1])
     grid = tf.tile(tf.cast(tf.concat([grid_x, grid_y], -1), tf.float32)[:, :, :, tf.newaxis, :], (1, 1, 1, 3, 1))
 
-    # box_xy = (tf.nn.sigmoid(f[..., :2]))
-    # box_wh = tf.exp(f[..., 2:4]) * anchor_tensor
     box_xy = (tf.nn.sigmoid(f[..., :2]) + grid) / tf.cast(grid.shape[::-1][2:4], tf.float32, )
     box_wh = tf.math.exp(f[..., 2:4]) * anchor_tensor
-    box_confidence = tf.nn.sigmoid(f[..., 4:5])
-    classes_score = tf.nn.sigmoid(f[..., 5:])
-    # box_confidence = f[..., 4:5]
-    # classes_score = f[..., 5:]
+    # box_confidence = tf.nn.sigmoid(f[..., 4:5])
+    # classes_score = tf.nn.sigmoid(f[..., 5:])
+    box_confidence = f[..., 4:5]
+    classes_score = f[..., 5:]
     feas = tf.reshape(tf.concat([box_xy, box_wh, box_confidence, classes_score], -1), [batchsize, -1, 3, f.shape[4]])
     return feas, grid
 
@@ -281,85 +279,11 @@ def model(x, num_classes, anchors, cal_loss=False, score_threshold=0.3):
     return nms_out_
 
 
-# def loss_old(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
-#     """
-#     :param pred: (batch_size, num_boxes, 5+num_class)[x0 y0 w h ] +grid
-#     :param gts: shape = (batch_size, 20, 4+num_class) [xmin,ymin,xmax,ymax,calsses] * 20
-#     :param input_size: height * width
-#     :param lambda_coord: lambda
-#     :param lambda_noobj: lambda
-#     :param iou_threshold: iou_threshold
-#     :return:
-#     """
-#
-#     def binary_cross(labels, pred):
-#         # return -labels * tf.log(pred + 0.0001) - (1 - labels) * tf.log(1.0001 - pred)
-#         return tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=pred)
-#
-#     pred_boxes, grid = pred
-#     height, width = input_size
-#     batch_size = pred_boxes.shape[0].value
-#
-#     gts_xywh = xy2wh(gts[..., :4])
-#     gts_x0 = gts_xywh[..., 0]
-#     gts_y0 = gts_xywh[..., 1]
-#
-#     # cal mask [batchsize,num_boxes,20]
-#     grid_boxes = []
-#     for g in grid:  # g: shape=(batchsize,h,w,2)
-#         g_width = g.shape[2].value
-#         g_height = g.shape[1].value
-#         r = int(width / g_width)
-#         ymin = g[..., 0:1] * r
-#         xmin = g[..., 1:2] * r
-#         xmax = xmin + r
-#         ymax = ymin + r
-#         grid_boxes.append(tf.reshape(tf.concat([xmin, ymin, xmax, ymax], -1), [g.shape[0].value, -1, 4]))
-#     grid_boxes = tf.concat(grid_boxes, 1)
-#
-#     # grid_boxes = tf.Variable(grid_boxes, False, name='debug_grid')
-#     batch_boxes_iou = []
-#     for i in range(batch_size):
-#         batch_boxes_iou.append(box_iou(grid_boxes[i:i + 1], gts[i:i + 1]))
-#     batch_boxes_iou = tf.concat(batch_boxes_iou, 0, name='debug_iou')
-#
-#     masks = tf.where(batch_boxes_iou > iou_threshold, tf.ones_like(batch_boxes_iou), tf.zeros_like(batch_boxes_iou),
-#                      "debug_mask")
-#
-#     pred_boxes = tf.tile(pred_boxes[:, :, tf.newaxis, :], [1, 1, gts.shape[1], 1], name='debug_pred')
-#
-#     gts_xywh = tf.concat([gts_xywh, gts[..., 4:]], -1)
-#     gts_xywh = tf.tile(gts_xywh[:, tf.newaxis, :, :], [1, grid_boxes.shape[1], 1, 1], 'debug_gts')
-#
-#     # pritn_op = tf.print(masks, output_stream=sys.stderr)
-#     # with tf.control_dependencies([pritn_op]):
-#
-#     loss_xy = tf.reduce_mean(lambda_coord * masks * tf.reduce_mean(
-#         # tf.nn.sigmoid_cross_entropy_with_logits(labels=gts_xywh[..., :2], logits=pred_boxes[..., :2]), -1))
-#         tf.square(pred_boxes[..., 2:4] - gts_xywh[..., 2:4]) / tf.constant([width, height], tf.float32), -1),
-#                              name='debug_loss_xy')
-#
-#     loss_wh = tf.reduce_mean(lambda_coord * masks * tf.reduce_mean(
-#         tf.square(tf.sqrt(pred_boxes[..., 2:4]) - tf.sqrt(gts_xywh[..., 2:4])), -1), name='debug_loss_wh')
-#
-#     loss_confidence = tf.reduce_mean(
-#         masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') + tf.reduce_mean(
-#         lambda_noobj * (1 - masks) * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_noobj')
-#     loss_cls = tf.reduce_mean(
-#         masks * tf.reduce_mean(
-#             binary_cross(labels=gts_xywh[..., 4:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
-#     )
-#
-#     # vars = tf.trainable_variables()
-#     # l2_loss = 0.001 * tf.add_n([tf.nn.l2_loss(var) for var in vars])
-#     return loss_xy + loss_cls + loss_confidence + loss_wh
-#     # return loss_xy + loss_wh
-#     # return loss_confidence
-
-def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
+def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, iou_threshold):
     """
     :param pred: (batch_size, num_boxes, 3, 5+num_class)[x0 y0 w h ] +grid
     :param gts: shape = (batch_size, num_boxes, 3, 4+num_class) [xywh,calsses]
+    :param anchors:
     :param input_size: height * width
     :param lambda_coord: lambda
     :param lambda_noobj: lambda
@@ -368,10 +292,10 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
     """
 
     def binary_cross(labels, pred):
-        pred = tf.clip_by_value(pred, 1e-5, 1 - 1e-5)
-        return -labels * tf.math.log(pred) - (1 - labels) * tf.math.log(1 - pred)
+        # pred = tf.clip_by_value(pred, 1e-10, 1 - 1e-10)
+        # return -labels * tf.math.log(pred)
         # pred = tf.math.log(pred / (1 - pred))
-        # return tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=pred)
+        return tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=pred)
 
     pred_boxes, grid = pred
 
@@ -392,13 +316,17 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
 
     scale_tensor = []
     grid_tensor = []
-    for g in grid:
+    anchors_tnesor = []
+    for ii, g in enumerate(grid):
         _, g_h, g_w, g_n, _ = g.get_shape().as_list()
         scale = i_height / g_h
         scale_tensor.append(tf.constant(scale, tf.float32, [batchsize, g_h * g_w, g_n, 2]))
         grid_tensor.append(tf.reshape(g, [batchsize, g_h * g_w, g_n, 2]))
+        anchors_ = tf.constant(anchors[[ii, ii + 1, ii + 2]], dtype=tf.float32)
+        anchors_tnesor.append(tf.tile(anchors_[tf.newaxis, tf.newaxis, :, :], [batchsize, g_h * g_w, 1, 1]))
     scale_tensor = tf.concat(scale_tensor, 1, name="debug_scale")
     grid_tensor = tf.concat(grid_tensor, 1, name="debug_grid")
+    anchors_tnesor = tf.concat(anchors_tnesor, 1, name="debug_anchor_mask")
 
     raw_pred_xy = tf.math.subtract(tf.math.divide(pred_boxes[..., :2], scale_tensor, name='debug_pred_div_scale'),
                                    grid_tensor,
@@ -406,21 +334,29 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
     raw_gt_xy = tf.math.subtract(gts[..., :2] / scale_tensor,
                                  tf.tile(masks[..., tf.newaxis], [1, 1, 1, 2]) * grid_tensor, name='debug_raw_gts_xy')
 
+    raw_pred_wh = tf.math.log(pred_boxes[..., 2:4] / anchors_tnesor + 1e-15, name='debug_raw_pred_wh')
+    raw_gt_wh = tf.math.multiply(tf.tile(masks[..., tf.newaxis], [1, 1, 1, 2]),
+                                 tf.math.log(gts[..., 2:4] / anchors_tnesor + 1e-15), name='debug_raw_gt_wh')
+    # raw_gt_wh = gts[..., 2:4]
+
+    box_loss_scale = 2 - raw_gt_wh[..., 0] - raw_gt_wh[..., 1]
+
     vars = tf.trainable_variables()
-    l2_loss = tf.reduce_sum([tf.nn.l2_loss(var) for var in vars]) * 0.01
+    l2_loss = tf.reduce_sum([tf.nn.l2_loss(var) for var in vars]) * 0.001
 
     loss_xy = tf.reduce_sum(
-        # lambda_coord * masks * tf.reduce_sum(binary_cross(labels=gts[..., :2], pred=pred_boxes[..., :2]), -1),
-        # lambda_coord * masks * tf.reduce_sum(binary_cross(labels=raw_gt_xy, pred=raw_pred_xy), -1),
-        lambda_coord * masks * tf.reduce_sum(tf.abs(raw_gt_xy - raw_pred_xy), -1),
-        # lambda_coord * masks * tf.reduce_sum(tf.square(pred_boxes[..., :2] - gts[..., :2]), -1),
-        name='debug_loss_xy') / batchsize
-    loss_wh = tf.reduce_sum(lambda_coord * masks * tf.reduce_sum(
-        tf.square(tf.sqrt(pred_boxes[..., 2:4]) - tf.sqrt(gts[..., 2:4])), -1), name='debug_loss_wh') / batchsize
+        box_loss_scale * lambda_coord * masks * tf.reduce_sum(
+            tf.math.square(raw_gt_xy - raw_pred_xy),
+            -1), name='debug_loss_xy') / batchsize
+    loss_wh = tf.reduce_sum(
+        box_loss_scale * lambda_coord * masks * tf.reduce_sum(
+            tf.math.square(raw_pred_wh - raw_gt_wh),
+            -1), name='debug_loss_wh') / batchsize
     loss_obj_confidence = tf.reduce_sum(
         masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') / batchsize
     loss_noobj_confidence = tf.reduce_sum(
         lambda_noobj * (1 - masks) * binary_cross(labels=1 - masks, pred=1 - pred_boxes[..., 4]) * ignore_mask,
+        # lambda_noobj * (1 - masks) * binary_cross(labels=1 - masks, pred=1 - pred_boxes[..., 4]),
         name='debug_loss_noobj') / batchsize
     loss_cls = tf.reduce_sum(
         masks * tf.reduce_sum(
@@ -429,4 +365,4 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, iou_threshold):
     p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
                  'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls)
     with tf.control_dependencies([p]):
-        return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls
+        return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss

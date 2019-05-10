@@ -124,6 +124,10 @@ def wh2xy(b):
     return tf.concat([xmin, ymin, xmax, ymax], -1)
 
 
+def np_sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
 if __name__ == '__main__':
     b = tf.placeholder(tf.float32, [2, 4, 4])
     xy2wh(b)

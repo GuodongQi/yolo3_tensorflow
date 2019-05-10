@@ -22,8 +22,8 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
 
     h_scale = hw[0] / height
     w_scale = hw[1] / width
-    anchor[:, 0] *= w_scale
-    anchor[:, 1] *= h_scale
+    # anchor[:, 0] *= w_scale
+    # anchor[:, 1] *= h_scale
 
     xyxy = []
 

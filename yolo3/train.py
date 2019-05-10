@@ -6,7 +6,7 @@ import time
 from tensorflow.python import debug as tf_debug
 
 from net.yolo3_net import model, loss
-from util.box_util import xy2wh_np, wh2xy_np, box_anchor_iou
+from util.box_util import xy2wh_np, wh2xy_np, box_anchor_iou, np_sigmoid
 from util.image_util import read_image_and_lable
 
 
@@ -24,7 +24,7 @@ class YOLO():
         self.learn_rate = 1e-4
         self.lambda_coord = 1
         self.lambda_noobj = 0.5
-        self.iou_threshold = 0.5
+        self.iou_threshold = 0.2
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
@@ -60,7 +60,7 @@ class YOLO():
             while not res:
                 res = read_image_and_lable(gts[kk], self.hw, self.anchors)
                 kk += 1
-            img, _label, self.anchors = res
+            img, _label, _ = res
 
             img_files.append(img)
             _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
@@ -83,6 +83,8 @@ class YOLO():
                     # gd[j, i, k, 1] = y0 / h_r - j
                     gd[j, i, k, 0] = x0
                     gd[j, i, k, 1] = y0
+                    # gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
+                    # gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
                     gd[j, i, k, 2] = w
                     gd[j, i, k, 3] = h
                     gd[j, i, k, 4] = 1
@@ -102,10 +104,12 @@ class YOLO():
         s = sum([g[2] * g[1] for g in grid_shape])
         self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 5 + len(self.classes)])
 
-        losses = loss(pred, self.label, self.hw, self.lambda_coord, self.lambda_noobj, self.iou_threshold)
+        losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj,
+                      self.iou_threshold)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         op = opt.minimize(losses)
-        # img, label = self.generate_data(self.gts[0:0 + 2 * self.batch_size], grid_shape)
+
+        # img, label = self.generate_data(self.gts[0:0 + self.batch_size], grid_shape)
 
         # summary
         writer = tf.summary.FileWriter(self.log_path)
@@ -117,7 +121,7 @@ class YOLO():
 
         config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
         sess = tf.Session(config=config)
-        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+        # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
         saver = tf.train.Saver()
         if not len(self.pretrain_path):
@@ -128,7 +132,7 @@ class YOLO():
 
         i = 0
         for step in range(100000):
-            if (i + 1) * self.batch_size >= len(self.gts):
+            if i + self.batch_size >= len(self.gts):
                 i = 0
                 np.random.shuffle(self.gts)
             img, label = self.generate_data(self.gts[i:i + self.batch_size], grid_shape)
@@ -136,12 +140,12 @@ class YOLO():
                 self.input: img,
                 self.label: label
             })
-            i += 1
+            i += self.batch_size
             print('step:{} loss:{}'.format(step, losses_))
 
             if (step + 1) % 10 == 1:  # for visible
                 boxes, grid = pred_
-                score = boxes[..., 4:5] * boxes[..., 5:]
+                score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
                 vis_img = []
 
                 for b in range(self.batch_size):
