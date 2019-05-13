@@ -47,7 +47,7 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
         xyxy[:, 2] = hw[1] - tmp
 
     # distort image
-    if rand() < 0.5:
+    if False:
         x = rgb_to_hsv(image_data)
         hue = rand(-hue, hue)
         sat = rand(1, sat) if rand() < .5 else 1 / rand(1, sat)

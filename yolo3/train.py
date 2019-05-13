@@ -2,12 +2,15 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import time
+from os.path import join
 
 from tensorflow.python import debug as tf_debug
 
 from net.yolo3_net import model, loss
-from util.box_util import xy2wh_np, wh2xy_np, box_anchor_iou, np_sigmoid
-from util.image_util import read_image_and_lable
+from util.box_utils import xy2wh_np, box_anchor_iou, wh2xy_np, nms_np
+from util.image_utils import read_image_and_lable
+from util.utils import sec2time, np_sigmoid
+
 
 
 class YOLO():
@@ -20,11 +23,14 @@ class YOLO():
         # self.pretrain_path = ''
 
         self.batch_size = 4
+        self.epoch = 100
 
         self.learn_rate = 1e-4
-        self.lambda_coord = 1
-        self.lambda_noobj = 0.5
-        self.iou_threshold = 0.2
+        self.lambda_coord = 5
+        self.lambda_noobj = 0.4
+        self.lambda_cls = 1
+
+        self.iou_threshold = 0.6
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
@@ -36,6 +42,8 @@ class YOLO():
 
         with open(self.train_path) as f:
             self.gts = f.readlines()
+
+        self.gt_len = len(self.gts)
 
     def _get_anchors(self):
         """loads the anchors from a file"""
@@ -88,7 +96,7 @@ class YOLO():
                     gd[j, i, k, 2] = w
                     gd[j, i, k, 3] = h
                     gd[j, i, k, 4] = 1
-                    gd[j, i, k, 4 + int(per_label[4])] = 1
+                    gd[j, i, k, 5 + int(per_label[4])] = 1
 
                 gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
             labels.append(np.concatenate(gds, 0))
@@ -104,7 +112,7 @@ class YOLO():
         s = sum([g[2] * g[1] for g in grid_shape])
         self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 5 + len(self.classes)])
 
-        losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj,
+        losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
                       self.iou_threshold)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         op = opt.minimize(losses)
@@ -123,53 +131,63 @@ class YOLO():
         sess = tf.Session(config=config)
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(max_to_keep=1)
         if not len(self.pretrain_path):
             init = tf.global_variables_initializer()
             sess.run(init)
         else:
             saver.restore(sess, tf.train.latest_checkpoint(self.pretrain_path))
 
-        i = 0
-        for step in range(100000):
-            if i + self.batch_size >= len(self.gts):
-                i = 0
-                np.random.shuffle(self.gts)
-            img, label = self.generate_data(self.gts[i:i + self.batch_size], grid_shape)
-            pred_, losses_, _ = sess.run([pred, losses, op], {
-                self.input: img,
-                self.label: label
-            })
-            i += self.batch_size
-            print('step:{} loss:{}'.format(step, losses_))
-
-            if (step + 1) % 10 == 1:  # for visible
-                boxes, grid = pred_
-                score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
-                vis_img = []
-
-                for b in range(self.batch_size):
-                    idx = np.where(score[b] > 0.2)
-                    box_select = boxes[b][idx[:2]]
-                    box_xywh = box_select[:, :4]
-                    box_xyxy = wh2xy_np(box_xywh)
-                    box_socre = score[b][idx]
-                    clsid = idx[2]
-
-                    per_img = (img[b] + 1) * 128
-                    for bbox in box_xyxy:
-                        per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
-                                                tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
-                    vis_img.append(per_img)
-                ss = sess.run(summary, feed_dict={
-                    img_tensor: np.array(vis_img),
-                    loss_tensor: losses_
+        total_step = self.gt_len // self.batch_size * self.epoch
+        for ep in range(self.epoch):
+            np.random.shuffle(self.gts)
+            for i in range(0, self.gt_len - self.batch_size, self.batch_size):
+                t0 = time.time()
+                img, label = self.generate_data(self.gts[i:i + self.batch_size], grid_shape)
+                pred_, losses_, _ = sess.run([pred, losses, op], {
+                    self.input: img,
+                    self.label: label
                 })
-                writer.add_summary(ss, step)
-            if (step + 1) % 100 == 0:
-                saver.save(sess,
-                           'C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\logs\\step{}_loss{:.4f}'.format(
-                               step + 1, losses_))
+                t1 = time.time()
+
+                step = (ep * self.gt_len + i) // self.batch_size
+                print('step:{:<d}/{} epoch:{} batch:{:<d} loss:{:< .3f} ETA:{}'.format(
+                    step, total_step, ep, i, losses_,
+                    sec2time((t1 - t0) * (total_step - step))))
+
+                if step % 100 == 0:  # for visible
+                    boxes, grid = pred_
+                    score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
+                    vis_img = []
+
+                    for b in range(self.batch_size):
+                        idx = np.where(score[b] > 0.3)
+                        box_select = boxes[b][idx[:2]]
+                        box_xywh = box_select[:, :4]
+                        box_xyxy = wh2xy_np(box_xywh)
+                        box_socre = score[b][idx]
+                        clsid = idx[2]
+                        picked_boxes = nms_np(
+                            np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
+                            len(self.classes))
+                        per_img = (img[b] + 1) * 128
+                        for bbox in picked_boxes:
+                            per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
+                                                    tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
+                            per_img = cv2.putText(per_img, "{} {:.2f}".format(self.classes[int(bbox[5])], bbox[4]),
+                                                  tuple(np.int32([bbox[0], bbox[1]])),
+                                                  cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+
+                        vis_img.append(per_img)
+                    ss = sess.run(summary, feed_dict={
+                        img_tensor: np.array(vis_img),
+                        loss_tensor: losses_
+                    })
+                    writer.add_summary(ss, step)
+
+            saver.save(sess, join(self.log_path, 'step{}_loss{:.4f}'.format(
+                step + 1, losses_))
+                       )
 
 
 if __name__ == '__main__':

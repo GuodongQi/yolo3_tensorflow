@@ -2,7 +2,7 @@ import sys
 
 import tensorflow as tf
 
-from util.box_util import box_iou, xy2wh, wh2xy
+from util.box_utils import box_iou, xy2wh, wh2xy
 
 """
 (1280 * 640)
@@ -18,7 +18,7 @@ input = (640 * 320)
 
 leaky_alpha = 0.1
 mobilenet = False
-is_tiny = True
+is_tiny = False
 
 
 def conv_block(x, filters, stride, out_channel, name='', leaky_relu=True):
@@ -279,7 +279,7 @@ def model(x, num_classes, anchors, cal_loss=False, score_threshold=0.3):
     return nms_out_
 
 
-def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, iou_threshold):
+def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug=False):
     """
     :param pred: (batch_size, num_boxes, 3, 5+num_class)[x0 y0 w h ] +grid
     :param gts: shape = (batch_size, num_boxes, 3, 4+num_class) [xywh,calsses]
@@ -287,7 +287,9 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, iou_thresho
     :param input_size: height * width
     :param lambda_coord: lambda
     :param lambda_noobj: lambda
+    :param lambda_cls: lambda
     :param iou_threshold: iou_threshold
+    :param debug:
     :return:
     """
 
@@ -337,32 +339,39 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, iou_thresho
     raw_pred_wh = tf.math.log(pred_boxes[..., 2:4] / anchors_tnesor + 1e-15, name='debug_raw_pred_wh')
     raw_gt_wh = tf.math.multiply(tf.tile(masks[..., tf.newaxis], [1, 1, 1, 2]),
                                  tf.math.log(gts[..., 2:4] / anchors_tnesor + 1e-15), name='debug_raw_gt_wh')
-    # raw_gt_wh = gts[..., 2:4]
-
-    box_loss_scale = 2 - raw_gt_wh[..., 0] - raw_gt_wh[..., 1]
 
     vars = tf.trainable_variables()
     l2_loss = tf.reduce_sum([tf.nn.l2_loss(var) for var in vars]) * 0.001
+    # l2_loss = 0
+
+    masks_noobj = (1 - masks) * ignore_mask
+
+    # n_xywh = tf.reduce_sum(masks, name='debug_n_xywh')
+    # n_noob = tf.reduce_sum(masks_noobj, name='debug_n_noobj') / 100
+    n_xywh = batchsize
+    n_noob = batchsize
 
     loss_xy = tf.reduce_sum(
-        box_loss_scale * lambda_coord * masks * tf.reduce_sum(
+        lambda_coord * masks * tf.reduce_sum(
             tf.math.square(raw_gt_xy - raw_pred_xy),
-            -1), name='debug_loss_xy') / batchsize
+            -1), name='debug_loss_xy') / n_xywh
     loss_wh = tf.reduce_sum(
-        box_loss_scale * lambda_coord * masks * tf.reduce_sum(
+        lambda_coord * masks * tf.reduce_sum(
             tf.math.square(raw_pred_wh - raw_gt_wh),
-            -1), name='debug_loss_wh') / batchsize
+            -1), name='debug_loss_wh') / n_xywh
     loss_obj_confidence = tf.reduce_sum(
-        masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') / batchsize
+        masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') / n_xywh
+
     loss_noobj_confidence = tf.reduce_sum(
-        lambda_noobj * (1 - masks) * binary_cross(labels=1 - masks, pred=1 - pred_boxes[..., 4]) * ignore_mask,
-        # lambda_noobj * (1 - masks) * binary_cross(labels=1 - masks, pred=1 - pred_boxes[..., 4]),
-        name='debug_loss_noobj') / batchsize
+        lambda_noobj * masks_noobj * binary_cross(labels=masks, pred=pred_boxes[..., 4]),
+        name='debug_loss_noobj') / n_noob
     loss_cls = tf.reduce_sum(
-        masks * tf.reduce_sum(
+        masks * lambda_cls * tf.reduce_sum(
             binary_cross(labels=gts[..., 5:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
-    ) / batchsize
-    p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
-                 'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls)
-    with tf.control_dependencies([p]):
-        return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss
+    ) / n_xywh
+    if not debug:
+        p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
+                     'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls)
+        with tf.control_dependencies([p]):
+            return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss
+    return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss
