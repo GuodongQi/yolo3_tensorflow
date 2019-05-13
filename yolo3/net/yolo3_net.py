@@ -17,67 +17,110 @@ input = (640 * 320)
 """
 
 leaky_alpha = 0.1
-mobilenet = False
+net_type = 'mobilenet_v2'
 is_tiny = False
 
+xavier_initializer = tf.initializers.glorot_uniform()
 
-def conv_block(x, filters, stride, out_channel, name='', leaky_relu=True):
+
+def conv_block(x, filters, stride, out_channel, name='', relu=True):
     """
     :param x: input :nhwc
     :param filters: [f_w, f_h]
     :param stride:  int
     :param out_channel: int, out_channel
     :param name: str
-    :param leaky_relu: boolean
+    :param relu: boolean
     :return: depwise and pointwise out
     """
     with tf.name_scope('' + name):
-        in_channel = int(x.shape[3])
-        xavier_initializer = tf.initializers.glorot_uniform()
-        if mobilenet:
-            with tf.name_scope('depthwise'):
-                # depthwise_weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, 1], 0, 0.01))
-                depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, 1]))
-                x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
-            with tf.name_scope('pointwise'):
-                # pointwise_weight = tf.Variable(tf.truncated_normal([1, 1, in_channel, out_channel], 0, 0.01))
-                pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, out_channel]))
-                x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
-                if leaky_relu:
-                    x = tf.layers.batch_normalization(x, name=name)
-                    x = tf.nn.relu6(x, leaky_alpha)
-                else:
-                    bias = tf.Variable(tf.zeros_like(x))
-                    x += bias
-
-        else:
+        in_channel = x.shape[3].value
+        if net_type == 'cnn':
             with tf.name_scope('cnn'):
                 # weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, out_channel], 0, 0.01))
                 weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, out_channel]))
                 x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
-                if leaky_relu:
+                if relu:
                     x = tf.layers.batch_normalization(x, name=name)
                     x = tf.nn.leaky_relu(x, leaky_alpha)
                 else:
-                    bias = tf.Variable(tf.zeros_like(x))
+                    bias = tf.Variable(tf.zeros_like(x[0]))
+                    x += bias
+        elif net_type == 'mobilenet_v1':
+            with tf.name_scope('depthwise'):
+                # depthwise_weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, 1], 0, 0.01))
+                depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, 1]))
+                x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
+                x = tf.layers.batch_normalization(x)
+                x = tf.nn.relu6(x)
+
+            with tf.name_scope('pointwise'):
+                # pointwise_weight = tf.Variable(tf.truncated_normal([1, 1, in_channel, out_channel], 0, 0.01))
+                pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, out_channel]))
+                x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+                if relu:
+                    x = tf.layers.batch_normalization(x)
+                    x = tf.nn.relu6(x)
+                else:
+                    bias = tf.Variable(tf.zeros_like(x[0]))
+                    x += bias
+
+        elif net_type == 'mobilenet_v2':
+            tmp_channel = out_channel // 4
+            with tf.name_scope('expand_pointwise'):
+                pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
+                x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+                x = tf.layers.batch_normalization(x)
+                x = tf.nn.relu6(x)
+            with tf.name_scope('depthwise'):
+                depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], tmp_channel, 1]))
+                x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
+            with tf.name_scope('project_pointwise'):
+                pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
+                x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+                if relu:
+                    x = tf.layers.batch_normalization(x, name=name)
+                else:
+                    bias = tf.Variable(tf.zeros_like(x[0]))
                     x += bias
     return x
 
 
 def residual(x, out_channel):
-    if mobilenet:
-        return
-    else:
+    if net_type == 'cnn':
         shortcut = x
         x = conv_block(x, [1, 1], [1, 1], out_channel // 2)
         x = conv_block(x, [3, 3], [1, 1], out_channel)
         x += shortcut
-        return x
+    elif net_type == 'mobilenet_v1':
+        shortcut = x
+        x = conv_block(x, [1, 1], [1, 1], out_channel // 2)
+        x = conv_block(x, [3, 3], [1, 1], out_channel)
+        x += shortcut
+    elif net_type == 'mobilenet_v2':
+        shortcut = x
+        in_channel = x.shape[3].value
+        tmp_channel = out_channel // 4
+        with tf.name_scope('pointwise'):
+            pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
+            x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+            x = tf.layers.batch_normalization(x)
+            x = tf.nn.relu6(x)
+        with tf.name_scope('depthwise'):
+            depthwise_weight = tf.Variable(xavier_initializer([3, 3, tmp_channel, 1]))
+            x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, 1, 1, 1], 'SAME')
+        with tf.name_scope('pointwise'):
+            pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
+            x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
+            x = tf.layers.batch_normalization(x)
+        x += shortcut
+
+    return x
 
 
 def full_body(x):
     """
-    yolo3_tiny build by mobilenet
+    yolo3_tiny build by net_type
     :param x:
     :return:
     """
@@ -128,7 +171,7 @@ def full_head(x, route1, route2, num_class, anchors):
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route, [1, 1], [1, 1], 256)
-        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 256, 256], 0, 0.01))
+        transpose_weight = tf.Variable(xavier_initializer([1, 1, 256, 256]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
@@ -146,7 +189,7 @@ def full_head(x, route1, route2, num_class, anchors):
 
     with tf.name_scope('head_layer3'):
         x = conv_block(x_route, [1, 1], [1, 1], 128)
-        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 128, 128], 0, 0.01))
+        transpose_weight = tf.Variable(xavier_initializer([1, 1, 128, 128]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
@@ -166,7 +209,7 @@ def full_head(x, route1, route2, num_class, anchors):
 
 def tiny_body(x):
     """
-    yolo3_tiny build by mobilenet
+    yolo3_tiny build by net_type
     :param x:
     :return:
     """
@@ -205,7 +248,7 @@ def tiny_head(x, x_route1, num_class, anchors):
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route2, [1, 1], [1, 1], 128, 'conv10')
-        transpose_weight = tf.Variable(tf.truncated_normal([1, 1, 128, 128], 0, 0.01))
+        transpose_weight = tf.Variable(xavier_initializer([1, 1, 128, 128]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
@@ -371,7 +414,7 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
     ) / n_xywh
     if not debug:
         p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
-                     'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls)
+                     'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls, "l2_loss", l2_loss)
         with tf.control_dependencies([p]):
             return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss
     return loss_xy + loss_wh + loss_obj_confidence + loss_noobj_confidence + loss_cls + l2_loss

@@ -12,7 +12,6 @@ from util.image_utils import read_image_and_lable
 from util.utils import sec2time, np_sigmoid
 
 
-
 class YOLO():
     def __init__(self):
         self.anchor_path = "C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\model_data\\yolo_anchors.txt"
@@ -22,12 +21,12 @@ class YOLO():
         self.pretrain_path = self.log_path
         # self.pretrain_path = ''
 
-        self.batch_size = 4
+        self.batch_size = 8
         self.epoch = 100
 
         self.learn_rate = 1e-4
         self.lambda_coord = 5
-        self.lambda_noobj = 0.4
+        self.lambda_noobj = 0.5
         self.lambda_cls = 1
 
         self.iou_threshold = 0.6
