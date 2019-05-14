@@ -19,7 +19,7 @@ class YOLO():
         self.classes_path = 'C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\model_data\\voc_classes.txt'
         self.log_path = 'C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\logs\\'
         self.pretrain_path = self.log_path
-        # self.pretrain_path = ''
+        self.pretrain_path = ''
 
         self.batch_size = 8
         self.epoch = 100
@@ -58,50 +58,58 @@ class YOLO():
         class_names = [c.strip() for c in class_names]
         return class_names
 
-    def generate_data(self, gts, grid_shape):
-        img_files = []
-        labels = []
-        for idx in range(len(gts)):
-            res = read_image_and_lable(gts[idx], self.hw, self.anchors)
-            kk = 0
-            while not res:
-                res = read_image_and_lable(gts[kk], self.hw, self.anchors)
-                kk += 1
-            img, _label, _ = res
+    def generate_data(self, grid_shape):
+        idx = 0
+        while True:
+            img_files = []
+            labels = []
+            b = 0
+            while idx + self.batch_size < len(self.gts):  # a bitch
+                res = read_image_and_lable(self.gts[idx + b], self.hw, self.anchors)
+                if not res:
+                    b += 1
+                    continue
+                img, _label, _ = res
 
-            img_files.append(img)
-            _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
+                img_files.append(img)
+                _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
 
-            gds = []
-            for g_id, g_shape in enumerate(grid_shape):
-                anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
-                gd = np.zeros(g_shape[1:3] + [3, 5 + len(self.classes)])
-                h_r = self.hw[0] / gd.shape[0]
-                w_r = self.hw[1] / gd.shape[1]
-                for per_label in _label_:
-                    x0, y0, w, h = per_label[:4]
-                    if w == 0 or h == 0:
-                        continue
-                    i = int(np.floor(x0 / w_r))
-                    j = int(np.floor(y0 / h_r))
-                    box_iou = box_anchor_iou(anchors, per_label[2:4])
-                    k = np.argmax(box_iou)
-                    # gd[j, i, k, 0] = x0 / w_r - i
-                    # gd[j, i, k, 1] = y0 / h_r - j
-                    gd[j, i, k, 0] = x0
-                    gd[j, i, k, 1] = y0
-                    # gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
-                    # gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
-                    gd[j, i, k, 2] = w
-                    gd[j, i, k, 3] = h
-                    gd[j, i, k, 4] = 1
-                    gd[j, i, k, 5 + int(per_label[4])] = 1
+                gds = []
+                for g_id, g_shape in enumerate(grid_shape):
+                    anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
+                    gd = np.zeros(g_shape[1:3] + [3, 5 + len(self.classes)])
+                    h_r = self.hw[0] / gd.shape[0]
+                    w_r = self.hw[1] / gd.shape[1]
+                    for per_label in _label_:
+                        x0, y0, w, h = per_label[:4]
+                        if w == 0 or h == 0:
+                            continue
+                        i = int(np.floor(x0 / w_r))
+                        j = int(np.floor(y0 / h_r))
+                        box_iou = box_anchor_iou(anchors, per_label[2:4])
+                        k = np.argmax(box_iou)
+                        # gd[j, i, k, 0] = x0 / w_r - i
+                        # gd[j, i, k, 1] = y0 / h_r - j
+                        gd[j, i, k, 0] = x0
+                        gd[j, i, k, 1] = y0
+                        # gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
+                        # gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
+                        gd[j, i, k, 2] = w
+                        gd[j, i, k, 3] = h
+                        gd[j, i, k, 4] = 1
+                        gd[j, i, k, 5 + int(per_label[4])] = 1
 
-                gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
-            labels.append(np.concatenate(gds, 0))
-
-        img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
-        return img_files, labels
+                    gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
+                labels.append(np.concatenate(gds, 0))
+                b += 1
+                if len(labels) == self.batch_size:
+                    idx += self.batch_size
+                    break
+            if idx + self.batch_size >= len(self.gts):
+                np.random.shuffle(self.gts)
+                idx = 0
+            img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
+            yield img_files, labels
 
     def train(self):
         # pred, losses, op = self.create_model()
@@ -138,55 +146,58 @@ class YOLO():
             saver.restore(sess, tf.train.latest_checkpoint(self.pretrain_path))
 
         total_step = self.gt_len // self.batch_size * self.epoch
-        for ep in range(self.epoch):
-            np.random.shuffle(self.gts)
-            for i in range(0, self.gt_len - self.batch_size, self.batch_size):
-                t0 = time.time()
-                img, label = self.generate_data(self.gts[i:i + self.batch_size], grid_shape)
-                pred_, losses_, _ = sess.run([pred, losses, op], {
-                    self.input: img,
-                    self.label: label
+
+        epoch = 0
+        step = 0
+        t0 = time.time()
+        for data in self.generate_data(grid_shape):
+            step += 1
+            img, label = data
+            pred_, losses_, _ = sess.run([pred, losses, op], {
+                self.input: img,
+                self.label: label
+            })
+            t1 = time.time()
+            epoch_old = epoch
+            epoch = step // (len(self.gts) // self.batch_size)
+            print('step:{:<d}/{} epoch:{} loss:{:< .3f} ETA:{}'.format(
+                step, total_step, epoch, losses_,
+                sec2time((t1 - t0) * (total_step - step))))
+
+            if step % 20 == 0:  # for visible
+                boxes, grid = pred_
+                score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
+                vis_img = []
+
+                for b in range(self.batch_size):
+                    idx = np.where(score[b] > 0.5)
+                    box_select = boxes[b][idx[:2]]
+                    box_xywh = box_select[:, :4]
+                    box_xyxy = wh2xy_np(box_xywh)
+                    box_socre = score[b][idx]
+                    clsid = idx[2]
+                    picked_boxes = nms_np(
+                        np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
+                        len(self.classes))
+                    per_img = (img[b] + 1) * 128
+                    for bbox in picked_boxes:
+                        per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
+                                                tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
+                        per_img = cv2.putText(per_img, "{} {:.2f}".format(self.classes[int(bbox[5])], bbox[4]),
+                                              tuple(np.int32([bbox[0], bbox[1]])),
+                                              cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
+
+                    vis_img.append(per_img)
+                ss = sess.run(summary, feed_dict={
+                    img_tensor: np.array(vis_img),
+                    loss_tensor: losses_
                 })
-                t1 = time.time()
-
-                step = (ep * self.gt_len + i) // self.batch_size
-                print('step:{:<d}/{} epoch:{} batch:{:<d} loss:{:< .3f} ETA:{}'.format(
-                    step, total_step, ep, i, losses_,
-                    sec2time((t1 - t0) * (total_step - step))))
-
-                if step % 100 == 0:  # for visible
-                    boxes, grid = pred_
-                    score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
-                    vis_img = []
-
-                    for b in range(self.batch_size):
-                        idx = np.where(score[b] > 0.3)
-                        box_select = boxes[b][idx[:2]]
-                        box_xywh = box_select[:, :4]
-                        box_xyxy = wh2xy_np(box_xywh)
-                        box_socre = score[b][idx]
-                        clsid = idx[2]
-                        picked_boxes = nms_np(
-                            np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
-                            len(self.classes))
-                        per_img = (img[b] + 1) * 128
-                        for bbox in picked_boxes:
-                            per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
-                                                    tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
-                            per_img = cv2.putText(per_img, "{} {:.2f}".format(self.classes[int(bbox[5])], bbox[4]),
-                                                  tuple(np.int32([bbox[0], bbox[1]])),
-                                                  cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
-
-                        vis_img.append(per_img)
-                    ss = sess.run(summary, feed_dict={
-                        img_tensor: np.array(vis_img),
-                        loss_tensor: losses_
-                    })
-                    writer.add_summary(ss, step)
-
-            saver.save(sess, join(self.log_path, 'step{}_loss{:.4f}'.format(
-                step + 1, losses_))
-                       )
+                writer.add_summary(ss, step)
+            if epoch != epoch_old:
+                saver.save(sess, join(self.log_path, 'epoch{}_loss{:.3f}'.format(
+                    epoch + 1, losses_))
+                           )
+            t0 = time.time()
 
 
 if __name__ == '__main__':
