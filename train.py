@@ -29,9 +29,8 @@ class YOLO():
         self.anchors = self._get_anchors()
         self.hw = [320, 640]
         if config.tiny:
-            assert 5 == len(
+            assert 6 == len(
                 self.anchors), 'the model type does not match with anchors, check anchors or type param'
-        if len(self.anchors) == 5:
             self.log_path = join(getcwd(), 'logs', config.net_type + '_tiny')
         else:
             self.log_path = join(getcwd(), 'logs', config.net_type + '_full')

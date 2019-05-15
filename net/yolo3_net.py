@@ -235,13 +235,13 @@ def tiny_darknet_body(x, net_type):
     if net_type in ['mobilenetv1', 'mobilenetv2']:
         net_type = 'mobilenetv1'
     x = conv_block(x, [3, 3], [1, 1], 16, net_type)
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
 
     x = conv_block(x, [3, 3], [1, 1], 32, net_type)
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
 
     x = conv_block(x, [3, 3], [1, 1], 64, net_type)
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
 
     x = conv_block(x, [3, 3], [1, 1], 128, net_type)
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
@@ -268,13 +268,13 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
         fe1, grid1 = yolo(fe1, anchors[[0, 1, 2]])
 
     with tf.name_scope('head_layer2'):
-        x = conv_block(x_route2, [1, 1], [1, 1], 128, 'conv10')
+        x = conv_block(x_route2, [1, 1], [1, 1], 128, net_type)
         transpose_weight = tf.Variable(xavier_initializer([1, 1, 128, 128]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
         x = tf.concat([x, x_route1], 3)
-        x = conv_block(x, [3, 3], [1, 1], 256, 'conv11')
+        x = conv_block(x, [3, 3], [1, 1], 256, net_type)
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2")
         fe2 = x
         fe2, grid2 = yolo(fe2, anchors[[3, 4, 5]])
@@ -309,7 +309,7 @@ def yolo(f, anchors):
 
 def model(x, num_classes, anchors, net_type, cal_loss=False, score_threshold=0.3):
     batchsize, height, width, _ = x.get_shape().as_list()
-    if len(anchors) == 5:
+    if len(anchors) == 6:
         x, x_route = tiny_darknet_body(x, net_type)
         y, *grid = tiny_yolo_head(x, x_route, num_classes, anchors, net_type)
     else:

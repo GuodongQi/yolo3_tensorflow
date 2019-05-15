@@ -10,7 +10,7 @@ def get_config():
     # yolo3 type
     conf.add_argument('-n', "--net_type", type=str, help='net type: cnn, mobilenetv1 mobilenetv2 or mobilenetv3',
                       default='mobilenetv2')
-    conf.add_argument('-t', '--tiny', type=bool, help='whether tiny yolo or not', default=False)
+    conf.add_argument('-t', '--tiny', type=bool, help='whether tiny yolo or not', default=True)
 
     # training argument
     conf.add_argument('-b', '--batch_size', type=int, help='batch_size', default=4)
