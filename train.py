@@ -28,15 +28,15 @@ class YOLO():
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
         self.hw = [320, 640]
-
-        assert config.tiny == len(
-            self.anchors), 'the model type does not match with anchors, check anchors or type param'
+        if config.tiny:
+            assert 5 == len(
+                self.anchors), 'the model type does not match with anchors, check anchors or type param'
         if len(self.anchors) == 5:
             self.log_path = join(getcwd(), 'logs', config.net_type + '_tiny')
         else:
             self.log_path = join(getcwd(), 'logs', config.net_type + '_full')
         self.pretrain_path = self.log_path
-        self.pretrain_path = ''
+        # self.pretrain_path = ''
 
         self.input = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
 
