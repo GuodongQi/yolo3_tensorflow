@@ -1,7 +1,6 @@
 import tensorflow as tf
 
 from util.box_utils import box_iou, xy2wh, wh2xy
-from util.config import get_config
 
 """
 (1280 * 640)
@@ -14,19 +13,18 @@ input = (640 * 320)
 20 * 10
 10 * 5
 """
-config = get_config()
 leaky_alpha = 0.1
-net_type = config.net_type
 
 xavier_initializer = tf.initializers.glorot_uniform()
 
 
-def conv_block(x, filters, stride, out_channel, name='', relu=True):
+def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
     """
     :param x: input :nhwc
-    :param filters: [f_w, f_h]
-    :param stride:  int
+    :param filters: list [f_w, f_h]
+    :param stride: list int
     :param out_channel: int, out_channel
+    :param net_type: cnn mobilenet
     :param name: str
     :param relu: boolean
     :return: depwise and pointwise out
@@ -39,7 +37,7 @@ def conv_block(x, filters, stride, out_channel, name='', relu=True):
                 weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, out_channel]))
                 x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
                 if relu:
-                    x = tf.layers.batch_normalization(x, name=name)
+                    x = tf.layers.batch_normalization(x)
                     x = tf.nn.leaky_relu(x, leaky_alpha)
                 else:
                     bias = tf.Variable(tf.zeros_like(x[0]))
@@ -64,7 +62,7 @@ def conv_block(x, filters, stride, out_channel, name='', relu=True):
                     x += bias
 
         elif net_type == 'mobilenetv2':
-            tmp_channel = out_channel // 4
+            tmp_channel = out_channel * 3
             with tf.name_scope('expand_pointwise'):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
@@ -77,7 +75,7 @@ def conv_block(x, filters, stride, out_channel, name='', relu=True):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
                 if relu:
-                    x = tf.layers.batch_normalization(x, name=name)
+                    x = tf.layers.batch_normalization(x)
                 else:
                     bias = tf.Variable(tf.zeros_like(x[0]))
                     x += bias
@@ -86,30 +84,27 @@ def conv_block(x, filters, stride, out_channel, name='', relu=True):
     return x
 
 
-def residual(x, out_channel):
-    if net_type == 'cnn':
+def residual(x, net_type, out_channel=1, expand_time=1, stride=1):
+    if net_type in ['cnn', 'mobilenetv1']:
+        out_channel = x.shape[3].value
         shortcut = x
-        x = conv_block(x, [1, 1], [1, 1], out_channel // 2)
-        x = conv_block(x, [3, 3], [1, 1], out_channel)
+        x = conv_block(x, [1, 1], [1, 1], out_channel // 2, net_type='cnn')
+        x = conv_block(x, [3, 3], [1, 1], out_channel, net_type='cnn')
         x += shortcut
-    elif net_type == 'mobilenetv1':
-        shortcut = x
-        x = conv_block(x, [1, 1], [1, 1], out_channel // 2)
-        x = conv_block(x, [3, 3], [1, 1], out_channel)
-        x += shortcut
+
     elif net_type == 'mobilenetv2':
         shortcut = x
         in_channel = x.shape[3].value
-        tmp_channel = out_channel // 4
-        with tf.name_scope('pointwise'):
+        tmp_channel = in_channel * expand_time
+        with tf.name_scope('expand_pointwise'):
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
             x = tf.layers.batch_normalization(x)
             x = tf.nn.relu6(x)
         with tf.name_scope('depthwise'):
             depthwise_weight = tf.Variable(xavier_initializer([3, 3, tmp_channel, 1]))
-            x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, 1, 1, 1], 'SAME')
-        with tf.name_scope('pointwise'):
+            x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride, stride, 1], 'SAME')
+        with tf.name_scope('project_pointwise'):
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
             x = tf.layers.batch_normalization(x)
@@ -118,131 +113,157 @@ def residual(x, out_channel):
     return x
 
 
-def full_body(x):
+def full_yolo_body(x, net_type):
+    channel = x.shape[-1].value
+    if net_type in ['mobilenetv2']:
+        net_type = 'mobilenetv1'
+    x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
+    x = conv_block(x, [3, 3], [1, 1], channel, net_type)
+    x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
+    x = conv_block(x, [3, 3], [1, 1], channel, net_type)
+    x_route = x
+    x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
+    x = conv_block(x, [3, 3], [1, 1], channel, net_type)
+    return x_route, x
+
+
+def full_darknet_body(x, net_type):
     """
     yolo3_tiny build by net_type
     :param x:
+    :param net_type: cnn mobilenet
     :return:
     """
-    x = conv_block(x, [3, 3], [1, 1], 32)
+    if net_type in ['cnn', 'mobilenetv1']:
+        x = conv_block(x, [3, 3], [1, 1], 32, 'cnn')
 
-    # down sample
-    x = conv_block(x, [3, 3], [2, 2], 64)
-    for i in range(1):
-        x = residual(x, 64)
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 64, 'cnn')
+        for i in range(1):
+            x = residual(x, net_type)
 
-    # down sample
-    x = conv_block(x, [3, 3], [2, 2], 128)
-    for i in range(2):
-        x = residual(x, 128)
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 128, 'cnn')
+        for i in range(2):
+            x = residual(x, net_type)
 
-    # down sample
-    x = conv_block(x, [3, 3], [2, 2], 256)
-    for i in range(8):
-        x = residual(x, 256)
-    route2 = x
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 256, 'cnn')
+        for i in range(8):
+            x = residual(x, net_type)
+        route2 = x
 
-    # down sample
-    x = conv_block(x, [3, 3], [2, 2], 512)
-    for i in range(8):
-        x = residual(x, 512)
-    route1 = x
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 512, 'cnn')
+        for i in range(8):
+            x = residual(x, net_type)
+        route1 = x
 
-    # down sample
-    x = conv_block(x, [3, 3], [2, 2], 1024)
-    for i in range(4):
-        x = residual(x, 1024)
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 1024, 'cnn')
+        for i in range(4):
+            x = residual(x, net_type)
+
+    elif net_type == 'mobilenetv2':
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 32, 'cnn')
+
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 64, net_type)
+        for i in range(2):
+            x = residual(x, net_type, 64, 1)
+
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 96, net_type)
+        for i in range(4):
+            x = residual(x, net_type, 96, 6)
+        route2 = x
+
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 160, net_type)
+        for i in range(4):
+            x = residual(x, net_type, 160, 6)
+        route1 = x
+
+        # down sample
+        x = conv_block(x, [3, 3], [2, 2], 320, net_type)
+        for i in range(3):
+            x = residual(x, net_type, 320, 1)
 
     return x, route1, route2
 
 
-def full_head(x, route1, route2, num_class, anchors):
-    with tf.name_scope('head_layer1'):
-        x = conv_block(x, [1, 1], [1, 1], 512)
-        x = conv_block(x, [3, 3], [1, 1], 1024)
-        x = conv_block(x, [1, 1], [1, 1], 512)
-        x = conv_block(x, [3, 3], [1, 1], 1024)
-        x_route = x
-        x = conv_block(x, [1, 1], [1, 1], 512)
-        x = conv_block(x, [3, 3], [1, 1], 1024)
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head1", False)
-        fe1 = x
-        fe1, grid1 = yolo(fe1, anchors[[0, 1, 2]])
+def full_yolo_head(x, route1, route2, num_class, anchors, net_type):
+    with tf.name_scope('body_layer1'):
+        x_route, x = full_yolo_body(x, net_type)
+    x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1", False)
+    fe1, grid1 = yolo(x, anchors[[0, 1, 2]])
 
     with tf.name_scope('head_layer2'):
-        x = conv_block(x_route, [1, 1], [1, 1], 256)
-        transpose_weight = tf.Variable(xavier_initializer([1, 1, 256, 256]))
+        x = conv_block(x_route, [1, 1], [1, 1], route1.shape[-1].value, net_type)
+        transpose_weight = tf.Variable(xavier_initializer([1, 1, route1.shape[-1].value, route1.shape[-1].value]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
         x = tf.concat([x, route1], 3)
-        x = conv_block(x, [1, 1], [1, 1], 256)
-        x = conv_block(x, [3, 3], [1, 1], 512)
-        x = conv_block(x, [1, 1], [1, 1], 256)
-        x = conv_block(x, [3, 3], [1, 1], 512)
-        x_route = x
-        x = conv_block(x, [1, 1], [1, 1], 256)
-        x = conv_block(x, [3, 3], [1, 1], 512)
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head2", False)
-        fe2 = x
-        fe2, grid2 = yolo(fe2, anchors[[3, 4, 5]])
+        x_route, x = full_yolo_body(x, net_type)
+    x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2", False)
+    fe2, grid2 = yolo(x, anchors[[3, 4, 5]])
 
     with tf.name_scope('head_layer3'):
-        x = conv_block(x_route, [1, 1], [1, 1], 128)
-        transpose_weight = tf.Variable(xavier_initializer([1, 1, 128, 128]))
+        x = conv_block(x_route, [1, 1], [1, 1], route2.shape[-1].value, net_type)
+        transpose_weight = tf.Variable(xavier_initializer([1, 1, route2.shape[-1].value, route2.shape[-1].value]))
         x = tf.nn.conv2d_transpose(x, transpose_weight,
                                    [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
                                    [1, 2, 2, 1], 'SAME')
         x = tf.concat([x, route2], 3)
-        x = conv_block(x, [1, 1], [1, 1], 128)
-        x = conv_block(x, [3, 3], [1, 1], 256)
-        x = conv_block(x, [1, 1], [1, 1], 128)
-        x = conv_block(x, [3, 3], [1, 1], 256)
-        x = conv_block(x, [1, 1], [1, 1], 128)
-        x = conv_block(x, [3, 3], [1, 1], 156)
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head3", False)
-        fe3 = x
-        fe3, grid3 = yolo(fe3, anchors[[6, 7, 8]])
+        x_route, x = full_yolo_body(x, net_type)
+    x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head3", False)
+    fe3, grid3 = yolo(x, anchors[[6, 7, 8]])
+
     fe = tf.concat([fe1, fe2, fe3], 1)
     return fe, grid1, grid2, grid3
 
 
-def tiny_body(x):
+def tiny_darknet_body(x, net_type):
     """
     yolo3_tiny build by net_type
     :param x:
+    :param net_type: cnn or mobile-net
     :return:
     """
-    x = conv_block(x, [3, 3], [1, 1], 16, 'conv1')
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+    if net_type in ['mobilenetv1', 'mobilenetv2']:
+        net_type = 'mobilenetv1'
+    x = conv_block(x, [3, 3], [1, 1], 16, net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
 
-    x = conv_block(x, [3, 3], [1, 1], 32, 'conv2')
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+    x = conv_block(x, [3, 3], [1, 1], 32, net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
 
-    x = conv_block(x, [3, 3], [1, 1], 64, 'conv3')
-    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
+    x = conv_block(x, [3, 3], [1, 1], 64, net_type)
+    x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], net_type)
 
-    x = conv_block(x, [3, 3], [1, 1], 128, 'conv4')
+    x = conv_block(x, [3, 3], [1, 1], 128, net_type)
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
     x_route = x
 
-    x = conv_block(x, [3, 3], [1, 1], 256, 'conv5')
+    x = conv_block(x, [3, 3], [1, 1], 256, net_type)
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
 
-    x = conv_block(x, [3, 3], [1, 1], 512, 'conv6')
+    x = conv_block(x, [3, 3], [1, 1], 512, net_type)
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 1, 1, 1], 'SAME')
 
-    x = conv_block(x, [3, 3], [1, 1], 1024, 'conv7')
+    x = conv_block(x, [3, 3], [1, 1], 1024, net_type)
 
     return x, x_route
 
 
-def tiny_head(x, x_route1, num_class, anchors):
+def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
     with tf.name_scope('head_layer1'):
-        x = conv_block(x, [1, 1], [1, 1], 256, 'conv8')
+        x = conv_block(x, [1, 1], [1, 1], 256, net_type)
         x_route2 = x
-        x = conv_block(x, [3, 3], [1, 1], 512, 'conv9')
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head1")
+        x = conv_block(x, [3, 3], [1, 1], 512, net_type)
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1")
         fe1 = x
         fe1, grid1 = yolo(fe1, anchors[[0, 1, 2]])
 
@@ -254,7 +275,7 @@ def tiny_head(x, x_route1, num_class, anchors):
                                    [1, 2, 2, 1], 'SAME')
         x = tf.concat([x, x_route1], 3)
         x = conv_block(x, [3, 3], [1, 1], 256, 'conv11')
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), "yolo_head2")
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2")
         fe2 = x
         fe2, grid2 = yolo(fe2, anchors[[3, 4, 5]])
 
@@ -286,14 +307,14 @@ def yolo(f, anchors):
     return feas, grid
 
 
-def model(x, num_classes, anchors, cal_loss=False, score_threshold=0.3):
+def model(x, num_classes, anchors, net_type, cal_loss=False, score_threshold=0.3):
     batchsize, height, width, _ = x.get_shape().as_list()
     if len(anchors) == 5:
-        x, x_route = tiny_body(x)
-        y, *grid = tiny_head(x, x_route, num_classes, anchors)
+        x, x_route = tiny_darknet_body(x, net_type)
+        y, *grid = tiny_yolo_head(x, x_route, num_classes, anchors, net_type)
     else:
-        x, route1, route2 = full_body(x)
-        y, *grid = full_head(x, route1, route2, num_classes, anchors)
+        x, route1, route2 = full_darknet_body(x, net_type)
+        y, *grid = full_yolo_head(x, route1, route2, num_classes, anchors, net_type)
 
     box_xy, box_wh, box_confidence, classes_score = y[..., :2], y[..., 2:4], y[..., 4:5], y[..., 5:]
     box_xy *= tf.constant([width, height], tf.float32)

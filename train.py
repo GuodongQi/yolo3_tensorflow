@@ -29,12 +29,14 @@ class YOLO():
         self.anchors = self._get_anchors()
         self.hw = [320, 640]
 
+        assert config.tiny == len(
+            self.anchors), 'the model type does not match with anchors, check anchors or type param'
         if len(self.anchors) == 5:
-            self.log_path = join(getcwd(), 'logs', config.net_type+'_tiny')
+            self.log_path = join(getcwd(), 'logs', config.net_type + '_tiny')
         else:
-            self.log_path = join(getcwd(), 'logs', config.net_type+'_full')
+            self.log_path = join(getcwd(), 'logs', config.net_type + '_full')
         self.pretrain_path = self.log_path
-        # self.pretrain_path = ''
+        self.pretrain_path = ''
 
         self.input = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
 
@@ -114,7 +116,7 @@ class YOLO():
 
     def train(self):
         # pred, losses, op = self.create_model()
-        pred = model(self.input, len(self.classes), self.anchors, True, 0.3)
+        pred = model(self.input, len(self.classes), self.anchors, config.net_type, True, 0.3)
         grid_shape = [g.get_shape().as_list() for g in pred[1]]
 
         s = sum([g[2] * g[1] for g in grid_shape])
@@ -135,8 +137,8 @@ class YOLO():
         tf.summary.image('img', img_tensor, self.batch_size)
         summary = tf.summary.merge_all()
 
-        config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
-        sess = tf.Session(config=config)
+        conf = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+        sess = tf.Session(config=conf)
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
         saver = tf.train.Saver(max_to_keep=1)
