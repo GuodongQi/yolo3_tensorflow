@@ -1,14 +1,14 @@
-import xml.etree.ElementTree as ET
 import os
 import random
+import xml.etree.ElementTree as ET
 
 classes = ['blood']
 
 # wd = os.path.dirname(os.getcwd())
 
-wd = 'C:\\Users\\qiguodong\\'
+wd = '/data2/qiguodong/python/'
 
-list_file_train = open('C:\\Users\\qiguodong\\PycharmProjects\\egame_qq_wzry\\yolo3\\model_data\\train.txt', 'w')
+list_file_train = open(wd + 'yolo3/model_data/train.txt', 'w')
 
 annotation_files = os.listdir(os.path.join(wd, 'dataset', 'annotation'))
 random.shuffle(annotation_files)
@@ -16,9 +16,9 @@ random.shuffle(annotation_files)
 for i in range(0, len(annotation_files), 1):
     annotation_file = annotation_files[i]
 
-    list_file_train.write('%s\\dataset\\image\\%s.jpg' % (wd, annotation_file.split('.')[0]))
+    list_file_train.write(wd + 'dataset/image/%s.jpg' % (annotation_file.split('.')[0]))
 
-    mypath = os.path.join(wd,'dataset', 'annotation', annotation_file)
+    mypath = os.path.join(wd, 'dataset', 'annotation', annotation_file)
     try:
         in_file = open(mypath, 'r')
     except:

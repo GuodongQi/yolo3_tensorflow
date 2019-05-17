@@ -18,7 +18,7 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
         return
     image_raw_data = cv2.imread(f_path)[..., ::-1]  # RGB h*w*c
     height, width = image_raw_data.shape[0], image_raw_data.shape[1]
-    image_data = cv2.resize(image_raw_data, tuple(hw[::-1])) / 255.0
+    image_data = cv2.resize(image_raw_data, tuple(hw[::-1])) / 128.0 - 1
 
     h_scale = hw[0] / height
     w_scale = hw[1] / width
@@ -48,6 +48,7 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
 
     # distort image
     if rand() < 0.5:
+        image_data = (image_data + 1) / 2.0
         x = rgb_to_hsv(image_data)
         hue = rand(-hue, hue)
         sat = rand(1, sat) if rand() < .5 else 1 / rand(1, sat)
@@ -75,12 +76,20 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
             xyxy[i, 2] = pad_left + xyxy[i, 2] if pad_left + xyxy[i, 2] < hw[1] else hw[1]
             xyxy[i, 1] = pad_top + xyxy[i, 1] if pad_top + xyxy[i, 1] < hw[0] else hw[0]
             xyxy[i, 3] = pad_top + xyxy[i, 3] if pad_top + xyxy[i, 3] < hw[0] else hw[0]
-
-    # for pt in xyxy:
-    #     img = cv2.rectangle(image_data, tuple([int(pt[0]), int(pt[1])]), tuple([int(pt[2]), int(pt[3])]), (0, 255, 0), 2)
-    # cv2.imshow('img', img[..., ::-1])
-    # print(xyxy)
-    # cv2.waitKey()
+    # random pad
+    if rand() < .5:
+        pad_bottom = random.randint(0, 25)
+        pad_right = random.randint(0, 25)
+        if rand() < .5:
+            image_data = np.pad(image_data, ((0, pad_bottom), (0, pad_right), (0, 0)), 'edge')
+        else:
+            image_data = np.pad(image_data, ((0, pad_bottom), (0, pad_right), (0, 0)), 'constant')
+        image_data = image_data[pad_bottom:hw[0] + pad_bottom, pad_right:hw[1] + pad_right, :]
+        for i in range(xyxy.shape[0]):
+            xyxy[i, 0] = xyxy[i, 0] - pad_right if xyxy[i, 0] - pad_right > 0 else 0
+            xyxy[i, 2] = xyxy[i, 2] - pad_right if xyxy[i, 2] - pad_right > 0 else 0
+            xyxy[i, 1] = xyxy[i, 1] - pad_bottom if xyxy[i, 1] - pad_bottom > 0 else 0
+            xyxy[i, 3] = xyxy[i, 3] - pad_bottom if xyxy[i, 3] - pad_bottom > 0 else 0
     return image_data, xyxy, anchor
 
 # def get_true_gts(gts,grid_shape):

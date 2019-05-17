@@ -319,28 +319,12 @@ def model(x, num_classes, anchors, net_type, cal_loss=False, score_threshold=0.3
     box_xy, box_wh, box_confidence, classes_score = y[..., :2], y[..., 2:4], y[..., 4:5], y[..., 5:]
     box_xy *= tf.constant([width, height], tf.float32)
     # box_wh *= tf.constant([width, height], tf.float32)
+    boxe = tf.concat([box_xy, box_wh, box_confidence, classes_score], -1, name='debug_pred')
 
     if cal_loss:
-        boxe = tf.concat([box_xy, box_wh, box_confidence, classes_score], -1, name='debug_pred')
         return boxe, grid
-
-    boxes = wh2xy(tf.concat([box_xy, box_wh], -1))
-    score = box_confidence * classes_score
-
-    nms_out_ = []
-    for b in range(batchsize):
-        b_boxes = boxes[b, ...]
-        b_score = score[b, ...]
-        masks = tf.where(b_score >= score_threshold)  # shape=(?*2)
-        b_boxes_selected = tf.gather(b_boxes, masks[..., 0])
-        b_score_selected = tf.gather_nd(b_score, masks)
-        class_id = masks[..., 1]
-        nms_idx = tf.image.non_max_suppression(b_boxes_selected, b_score_selected, tf.constant(20, tf.int32))
-        nms_box = tf.gather(b_boxes_selected, nms_idx)
-        nms_class = tf.gather(class_id, nms_idx)
-        nms_score = tf.gather(b_score_selected, nms_idx)
-        nms_out_.append([nms_box, nms_class, nms_score])
-    return nms_out_
+    else:
+        return boxe
 
 
 def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug=False):
@@ -433,7 +417,7 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
         masks * lambda_cls * tf.reduce_sum(
             binary_cross(labels=gts[..., 5:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
     ) / n_xywh
-    if not debug:
+    if debug:
         p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
                      'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls, "l2_loss", l2_loss)
         with tf.control_dependencies([p]):

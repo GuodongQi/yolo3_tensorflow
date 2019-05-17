@@ -2,14 +2,14 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import time
-from os.path import join
+from os.path import join, split
 from os import getcwd
 
 from tensorflow.python import debug as tf_debug
 
 from net.yolo3_net import model, loss
 from util.box_utils import xy2wh_np, box_anchor_iou, wh2xy_np, nms_np
-from util.config import get_config
+from util.train_config import get_config
 from util.image_utils import read_image_and_lable
 from util.utils import sec2time, np_sigmoid
 
@@ -34,8 +34,7 @@ class YOLO():
             self.log_path = join(getcwd(), 'logs', config.net_type + '_tiny')
         else:
             self.log_path = join(getcwd(), 'logs', config.net_type + '_full')
-        self.pretrain_path = self.log_path
-        # self.pretrain_path = ''
+        self.pretrain_path = config.pretrain_path
 
         self.input = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
 
@@ -122,7 +121,7 @@ class YOLO():
         self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 5 + len(self.classes)])
 
         losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
-                      self.iou_threshold)
+                      self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         op = opt.minimize(losses)
 
@@ -140,12 +139,29 @@ class YOLO():
         sess = tf.Session(config=conf)
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
+
         saver = tf.train.Saver(max_to_keep=1)
-        if not len(self.pretrain_path):
-            init = tf.global_variables_initializer()
-            sess.run(init)
-        else:
-            saver.restore(sess, tf.train.latest_checkpoint(self.pretrain_path))
+
+        # init
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        if len(self.pretrain_path):
+            flag = 0
+            try:
+                print('try to restore the whole graph')
+                saver.restore(sess, self.pretrain_path)
+            except:
+                print('failed to restore the whole graph')
+                flag = 1
+            if flag:
+                try:
+                    print('try to restore the graph body')
+                    vs = tf.trainable_variables()
+                    restore_weights = [v for v in vs if 'yolo_head' not in v.name]
+                    sv = tf.train.Saver(var_list=restore_weights)
+                    sv.restore(sess, self.pretrain_path)
+                except:
+                    raise Exception('restore body faild, please check the pretained weight')
 
         total_step = self.gt_len // self.batch_size * self.epoch
 
@@ -197,9 +213,10 @@ class YOLO():
                 })
                 writer.add_summary(ss, step)
             if epoch != epoch_old:
-                saver.save(sess, join(self.log_path, 'epoch{}_loss{:.3f}'.format(
-                    epoch + 1, losses_))
+                saver.save(sess, join(self.log_path, split(self.log_path)[-1]+'_model')
                            )
+            if step >= total_step:
+                break
 
 
 if __name__ == '__main__':
