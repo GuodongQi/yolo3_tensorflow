@@ -327,7 +327,7 @@ def model(x, num_classes, anchors, net_type, cal_loss=False, score_threshold=0.3
         return boxe
 
 
-def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug=False):
+def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug_=False):
     """
     :param pred: (batch_size, num_boxes, 3, 5+num_class)[x0 y0 w h ] +grid
     :param gts: shape = (batch_size, num_boxes, 3, 4+num_class) [xywh,calsses]
@@ -337,7 +337,7 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
     :param lambda_noobj: lambda
     :param lambda_cls: lambda
     :param iou_threshold: iou_threshold
-    :param debug:
+    :param debug_:
     :return:
     """
 
@@ -417,7 +417,7 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
         masks * lambda_cls * tf.reduce_sum(
             binary_cross(labels=gts[..., 5:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
     ) / n_xywh
-    if debug:
+    if debug_:
         p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
                      'loss_noobj_confidence', loss_noobj_confidence, "loss_cls", loss_cls, "l2_loss", l2_loss)
         with tf.control_dependencies([p]):

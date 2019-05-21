@@ -1,5 +1,6 @@
 NET_TYPE="mobilenetv2"
-TINY=False
+TINY=True
+ANCHOR_PATH="./model_data/yolo_anchors_tiny.txt"
 PRETRAIN_PATH=""
 
 epoch=200
@@ -18,7 +19,9 @@ cmd="python train.py \
 -e ${epoch} \
 -b ${batch_size} \
 -lr ${learning_rate} \
--d ${debug}"
+-d ${debug} \
+--anchor_path ${ANCHOR_PATH}
+"
 
 else
 
@@ -29,13 +32,14 @@ cmd="python train.py \
 -e ${epoch} \
 -b ${batch_size} \
 -lr ${learning_rate} \
--d ${debug}"
+-d ${debug} \
+--anchor_path ${ANCHOR_PATH}
+"
 
 fi
 
 echo $cmd
-nohup stdbuf -oL $cmd > ${NET_TYPE}_${TINY}.txt &
-
+$cmd
 
 
 

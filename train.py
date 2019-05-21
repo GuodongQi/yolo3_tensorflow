@@ -1,16 +1,15 @@
-import tensorflow as tf
-import numpy as np
-import cv2
 import time
-from os.path import join, split
 from os import getcwd
+from os.path import join, split
 
-from tensorflow.python import debug as tf_debug
+import cv2
+import numpy as np
+import tensorflow as tf
 
 from net.yolo3_net import model, loss
 from util.box_utils import xy2wh_np, box_anchor_iou, wh2xy_np, nms_np
-from util.train_config import get_config
 from util.image_utils import read_image_and_lable
+from util.train_config import get_config
 from util.utils import sec2time, np_sigmoid
 
 
@@ -25,14 +24,16 @@ class YOLO():
         self.lambda_cls = 1
         self.iou_threshold = 0.6
 
-        self.classes = self._get_classes()
-        self.anchors = self._get_anchors()
+        self.classes = self.__get_classes()
+        self.anchors = self.__get_anchors()
         self.hw = [320, 640]
         if config.tiny:
             assert 6 == len(
-                self.anchors), 'the model type does not match with anchors, check anchors or type param'
+                self.anchors), 'model type does not match with anchors, check anchors or type param'
             self.log_path = join(getcwd(), 'logs', config.net_type + '_tiny')
         else:
+            assert 9 == len(
+                self.anchors), 'model type does not match with anchors, check anchors or type param'
             self.log_path = join(getcwd(), 'logs', config.net_type + '_full')
         self.pretrain_path = config.pretrain_path
 
@@ -42,34 +43,48 @@ class YOLO():
 
         with open(config.train_path) as f:
             self.gts = f.readlines()
+        val_rate = 0.01
+        spl = int(val_rate * len(self.gts))
 
-        self.gt_len = len(self.gts)
+        np.random.seed(1000)
+        np.random.shuffle(self.gts)
+        np.random.seed(None)
 
-    def _get_anchors(self):
+        self.train_data = self.gts[spl:]
+        self.val_data = self.gts[:spl]
+
+    def __get_anchors(self):
         """loads the anchors from a file"""
         with open(config.anchor_path) as f:
             anchors = f.readline()
         anchors = [float(x) for x in anchors.split(',')]
         return np.array(anchors).reshape(-1, 2)
 
-    def _get_classes(self):
+    def __get_classes(self):
         """loads the classes"""
         with open(config.classes_path) as f:
             class_names = f.readlines()
         class_names = [c.strip() for c in class_names]
         return class_names
 
-    def generate_data(self, grid_shape):
+    def generate_data(self, grid_shape, is_val=False):
         idx = 0
+        if is_val:
+            gts = self.val_data
+        else:
+            gts = self.train_data
         while True:
             img_files = []
             labels = []
             b = 0
-            while idx + self.batch_size < len(self.gts):  # a bitch
-                res = read_image_and_lable(self.gts[idx + b], self.hw, self.anchors)
+            while idx + self.batch_size < len(gts):  # a batch
+                res = read_image_and_lable(gts[idx + b], self.hw, self.anchors)
                 if not res:
                     b += 1
-                    continue
+                    if idx + b < len(gts):
+                        continue
+                    else:
+                        b = 0
                 img, _label, _ = res
 
                 img_files.append(img)
@@ -106,8 +121,8 @@ class YOLO():
                 if len(labels) == self.batch_size:
                     idx += self.batch_size
                     break
-            if idx + self.batch_size >= len(self.gts):
-                np.random.shuffle(self.gts)
+            if idx + self.batch_size >= len(gts):
+                np.random.shuffle(gts)
                 idx = 0
             img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
             yield img_files, labels
@@ -124,8 +139,6 @@ class YOLO():
                       self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         op = opt.minimize(losses)
-
-        # img, label = self.generate_data(self.gts[0:0 + self.batch_size], grid_shape)
 
         # summary
         writer = tf.summary.FileWriter(self.log_path)
@@ -163,8 +176,12 @@ class YOLO():
                 except:
                     raise Exception('restore body faild, please check the pretained weight')
 
-        total_step = self.gt_len // self.batch_size * self.epoch
+        total_step = len(self.train_data) // self.batch_size * self.epoch
 
+        print('train on {} samples, val on {} samples, batch size {}, total {} epoch'.format(len(self.train_data),
+                                                                                            len(self.val_data),
+                                                                                            self.batch_size,
+                                                                                            self.epoch))
         epoch = 0
         step = 0
         t0 = time.time()
@@ -177,7 +194,7 @@ class YOLO():
             })
             t1 = time.time()
             epoch_old = epoch
-            epoch = step // (len(self.gts) // self.batch_size)
+            epoch = step // (len(self.train_data) // self.batch_size)
             print('step:{:<d}/{} epoch:{} loss:{:< .3f} ETA:{}'.format(
                 step, total_step, epoch, losses_,
                 sec2time((t1 - t0) * (total_step - step))))
@@ -213,8 +230,23 @@ class YOLO():
                 })
                 writer.add_summary(ss, step)
             if epoch != epoch_old:
-                saver.save(sess, join(self.log_path, split(self.log_path)[-1]+'_model')
+                val_loss = 0
+                val_step = 0
+                for val_data in self.generate_data(grid_shape, is_val=True):
+                    img, label = val_data
+                    _, losses__ = sess.run([pred, losses], {
+                        self.input: img,
+                        self.label: label
+                    })
+                    val_loss += losses__
+                    val_step += self.batch_size
+                    if val_step >= len(self.val_data):
+                        break
+                val_loss /= (val_step / self.batch_size)
+                saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model')
                            )
+                print('epoch:{} train_loss:{:< .3f} val_loss:{:< .3f}'.format(
+                    epoch, losses_, val_loss))
             if step >= total_step:
                 break
 
