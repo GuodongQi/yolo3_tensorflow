@@ -77,55 +77,60 @@ class YOLO():
             img_files = []
             labels = []
             b = 0
-            while idx + self.batch_size < len(gts):  # a batch
-                res = read_image_and_lable(gts[idx + b], self.hw, self.anchors)
-                if not res:
-                    b += 1
-                    if idx + b < len(gts):
+            while idx < len(gts):  # a batch
+                try:
+                    res = read_image_and_lable(gts[idx + b], self.hw, self.anchors)
+                except IndexError:
+                    b = 0
+                else:
+                    if not res:
+                        b += 1
                         continue
-                    else:
-                        b = 0
-                img, _label, _ = res
 
-                img_files.append(img)
-                _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
+                    img, _label, _ = res
 
-                gds = []
-                for g_id, g_shape in enumerate(grid_shape):
-                    anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
-                    gd = np.zeros(g_shape[1:3] + [3, 5 + len(self.classes)])
-                    h_r = self.hw[0] / gd.shape[0]
-                    w_r = self.hw[1] / gd.shape[1]
-                    for per_label in _label_:
-                        x0, y0, w, h = per_label[:4]
-                        if w == 0 or h == 0:
-                            continue
-                        i = int(np.floor(x0 / w_r))
-                        j = int(np.floor(y0 / h_r))
-                        box_iou = box_anchor_iou(anchors, per_label[2:4])
-                        k = np.argmax(box_iou)
-                        # gd[j, i, k, 0] = x0 / w_r - i
-                        # gd[j, i, k, 1] = y0 / h_r - j
-                        gd[j, i, k, 0] = x0
-                        gd[j, i, k, 1] = y0
-                        # gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
-                        # gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
-                        gd[j, i, k, 2] = w
-                        gd[j, i, k, 3] = h
-                        gd[j, i, k, 4] = 1
-                        gd[j, i, k, 5 + int(per_label[4])] = 1
+                    img_files.append(img)
+                    _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
 
-                    gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
-                labels.append(np.concatenate(gds, 0))
-                b += 1
-                if len(labels) == self.batch_size:
-                    idx += self.batch_size
-                    break
-            if idx + self.batch_size >= len(gts):
+                    gds = []
+                    for g_id, g_shape in enumerate(grid_shape):
+                        anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
+                        gd = np.zeros(g_shape[1:3] + [3, 5 + len(self.classes)])
+                        h_r = self.hw[0] / gd.shape[0]
+                        w_r = self.hw[1] / gd.shape[1]
+                        for per_label in _label_:
+                            x0, y0, w, h = per_label[:4]
+                            if w == 0 or h == 0:
+                                continue
+                            i = int(np.floor(x0 / w_r))
+                            j = int(np.floor(y0 / h_r))
+                            box_iou = box_anchor_iou(anchors, per_label[2:4])
+                            k = np.argmax(box_iou)
+                            # gd[j, i, k, 0] = x0 / w_r - i
+                            # gd[j, i, k, 1] = y0 / h_r - j
+                            gd[j, i, k, 0] = x0
+                            gd[j, i, k, 1] = y0
+                            # gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
+                            # gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
+                            gd[j, i, k, 2] = w
+                            gd[j, i, k, 3] = h
+                            gd[j, i, k, 4] = 1
+                            gd[j, i, k, 5 + int(per_label[4])] = 1
+
+                        gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
+                    labels.append(np.concatenate(gds, 0))
+                    b += 1
+                    if len(labels) == self.batch_size:
+                        idx += self.batch_size
+                        break
+            if idx >= len(gts):
                 np.random.shuffle(gts)
                 idx = 0
             img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
-            yield img_files, labels
+            if is_val:
+                yield img_files, labels
+            else:
+                yield img_files, labels, idx
 
     def train(self):
         # pred, losses, op = self.create_model()
@@ -143,9 +148,11 @@ class YOLO():
         # summary
         writer = tf.summary.FileWriter(self.log_path)
         img_tensor = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
-        loss_tensor = tf.placeholder(tf.float32)
-        tf.summary.scalar('losses', loss_tensor)
-        tf.summary.image('img', img_tensor, self.batch_size)
+        train_loss_tensor = tf.placeholder(tf.float32)
+        val_loss_tensor = tf.placeholder(tf.float32)
+        tf.summary.scalar('train_loss', train_loss_tensor)
+        tf.summary.scalar('val_loss', val_loss_tensor)
+        tf.summary.image('img_vis', img_tensor, self.batch_size)
         summary = tf.summary.merge_all()
 
         conf = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
@@ -176,31 +183,46 @@ class YOLO():
                 except:
                     raise Exception('restore body faild, please check the pretained weight')
 
-        total_step = len(self.train_data) // self.batch_size * self.epoch
+        total_step = int(np.ceil(len(self.train_data) / self.batch_size)) * self.epoch
 
         print('train on {} samples, val on {} samples, batch size {}, total {} epoch'.format(len(self.train_data),
-                                                                                            len(self.val_data),
-                                                                                            self.batch_size,
-                                                                                            self.epoch))
-        epoch = 0
+                                                                                             len(self.val_data),
+                                                                                             self.batch_size,
+                                                                                             self.epoch))
         step = 0
+        epoch = 0
         t0 = time.time()
         for data in self.generate_data(grid_shape):
             step += 1
-            img, label = data
+
+            img, label, idx = data
             pred_, losses_, _ = sess.run([pred, losses, op], {
                 self.input: img,
                 self.label: label
             })
             t1 = time.time()
-            epoch_old = epoch
-            epoch = step // (len(self.train_data) // self.batch_size)
             print('step:{:<d}/{} epoch:{} loss:{:< .3f} ETA:{}'.format(
                 step, total_step, epoch, losses_,
                 sec2time((t1 - t0) * (total_step - step))))
 
             t0 = time.time()
-            if step % 20 == 0:  # for visible
+            if idx == 0:
+                # cal vaild_loss
+                val_loss_ = 0
+                val_step = 0
+                for val_data in self.generate_data(grid_shape, is_val=True):
+                    img, label = val_data
+                    _, losses__ = sess.run([pred, losses], {
+                        self.input: img,
+                        self.label: label
+                    })
+                    val_loss_ += losses__
+                    val_step += self.batch_size
+                    if val_step >= len(self.val_data):
+                        break
+                val_loss_ /= (val_step / self.batch_size)
+
+                # for visual
                 boxes, grid = pred_
                 score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
                 vis_img = []
@@ -226,28 +248,16 @@ class YOLO():
                     vis_img.append(per_img)
                 ss = sess.run(summary, feed_dict={
                     img_tensor: np.array(vis_img),
-                    loss_tensor: losses_
+                    train_loss_tensor: losses_,
+                    val_loss_tensor: val_loss_
                 })
                 writer.add_summary(ss, step)
-            if epoch != epoch_old:
-                val_loss = 0
-                val_step = 0
-                for val_data in self.generate_data(grid_shape, is_val=True):
-                    img, label = val_data
-                    _, losses__ = sess.run([pred, losses], {
-                        self.input: img,
-                        self.label: label
-                    })
-                    val_loss += losses__
-                    val_step += self.batch_size
-                    if val_step >= len(self.val_data):
-                        break
-                val_loss /= (val_step / self.batch_size)
                 saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model')
                            )
                 print('epoch:{} train_loss:{:< .3f} val_loss:{:< .3f}'.format(
-                    epoch, losses_, val_loss))
-            if step >= total_step:
+                    epoch, losses_, val_loss_))
+                epoch += 1
+            if epoch >= self.epoch:
                 break
 
 
