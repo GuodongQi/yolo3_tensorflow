@@ -16,8 +16,6 @@ def get_config():
 
     conf.add_argument('--score', default=0.3, type=float, help='score threshold')
 
-    conf.add_argument('--anchor_path', type=str, help='anchor path',
-                      default=join(root, 'model_data', 'yolo_anchors.txt'))
     conf.add_argument('--classes_path', type=str, help='classes path',
                       default=join(root, 'model_data', 'voc_classes.txt'))
 
