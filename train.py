@@ -180,7 +180,7 @@ class YOLO():
                     restore_weights = [v for v in vs if 'yolo_head' not in v.name]
                     sv = tf.train.Saver(var_list=restore_weights)
                     sv.restore(sess, self.pretrain_path)
-                except:
+                except Exception:
                     raise Exception('restore body faild, please check the pretained weight')
 
         total_step = int(np.ceil(len(self.train_data) / self.batch_size)) * self.epoch
