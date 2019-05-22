@@ -11,9 +11,9 @@ So, you should build these 5 combination as folloing:
 These 5 frameworks are provided in this repository.
 
 ## Dependence
- python3;
- tensorflow >= 1.12 ;
- opencv;
+ python3  
+ tensorflow >= 1.12  
+ opencv  
 
 ## Train
 
