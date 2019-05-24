@@ -40,7 +40,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                     x = tf.layers.batch_normalization(x)
                     x = tf.nn.leaky_relu(x, leaky_alpha)
                 else:
-                    bias = tf.Variable(tf.zeros_like(x[0]))
+                    bias = tf.Variable(tf.zeros(shape=out_channel))
                     x += bias
         elif net_type == 'mobilenetv1':
             with tf.name_scope('depthwise'):
@@ -58,7 +58,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                     x = tf.layers.batch_normalization(x)
                     x = tf.nn.relu6(x)
                 else:
-                    bias = tf.Variable(tf.zeros_like(x[0]))
+                    bias = tf.Variable(tf.zeros(shape=out_channel))
                     x += bias
 
         elif net_type == 'mobilenetv2':
@@ -77,7 +77,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                 if relu:
                     x = tf.layers.batch_normalization(x)
                 else:
-                    bias = tf.Variable(tf.zeros_like(x[0]))
+                    bias = tf.Variable(tf.zeros(shape=out_channel))
                     x += bias
         else:
             raise Exception('net type is error, please check')
@@ -111,6 +111,13 @@ def residual(x, net_type, out_channel=1, expand_time=1, stride=1):
         x += shortcut
 
     return x
+
+
+def upsample(x, scale):
+    new_height = x.shape[1] * scale
+    new_width = x.shape[2] * scale
+    resized = tf.image.resize_images(x, [new_height, new_width])
+    return resized
 
 
 def full_yolo_body(x, net_type):
@@ -201,10 +208,7 @@ def full_yolo_head(x, route1, route2, num_class, anchors, net_type):
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route, [1, 1], [1, 1], route1.shape[-1].value, net_type)
-        transpose_weight = tf.Variable(xavier_initializer([1, 1, route1.shape[-1].value, route1.shape[-1].value]))
-        x = tf.nn.conv2d_transpose(x, transpose_weight,
-                                   [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
-                                   [1, 2, 2, 1], 'SAME')
+        x = upsample(x, 2)
         x = tf.concat([x, route1], 3)
         x_route, x = full_yolo_body(x, net_type)
     x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2", False)
@@ -212,10 +216,7 @@ def full_yolo_head(x, route1, route2, num_class, anchors, net_type):
 
     with tf.name_scope('head_layer3'):
         x = conv_block(x_route, [1, 1], [1, 1], route2.shape[-1].value, net_type)
-        transpose_weight = tf.Variable(xavier_initializer([1, 1, route2.shape[-1].value, route2.shape[-1].value]))
-        x = tf.nn.conv2d_transpose(x, transpose_weight,
-                                   [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
-                                   [1, 2, 2, 1], 'SAME')
+        x = upsample(x, 2)
         x = tf.concat([x, route2], 3)
         x_route, x = full_yolo_body(x, net_type)
     x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head3", False)
@@ -269,10 +270,7 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route2, [1, 1], [1, 1], 128, net_type)
-        transpose_weight = tf.Variable(xavier_initializer([1, 1, 128, 128]))
-        x = tf.nn.conv2d_transpose(x, transpose_weight,
-                                   [x.shape[0].value, x.shape[1].value * 2, x.shape[2].value * 2, x.shape[3].value],
-                                   [1, 2, 2, 1], 'SAME')
+        x = upsample(x, 2)
         x = tf.concat([x, x_route1], 3)
         x = conv_block(x, [3, 3], [1, 1], 256, net_type)
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2")
