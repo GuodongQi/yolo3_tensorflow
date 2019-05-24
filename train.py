@@ -26,7 +26,7 @@ class YOLO():
 
         self.classes = self.__get_classes()
         self.anchors = self.__get_anchors()
-        self.hw = [320, 640]
+        self.hw = [416, 416]
         if config.tiny:
             assert 6 == len(
                 self.anchors), 'model type does not match with anchors, check anchors or type param'
@@ -143,7 +143,8 @@ class YOLO():
         losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
                       self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
-        op = opt.minimize(losses)
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            op = opt.minimize(losses)
 
         # summary
         writer = tf.summary.FileWriter(self.log_path)

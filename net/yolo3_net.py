@@ -120,16 +120,16 @@ def upsample(x, scale):
     return resized
 
 
-def full_yolo_body(x, net_type):
-    channel = x.shape[-1].value
+def full_yolo_body(x, out_channel, net_type):
+    channel = out_channel
     if net_type in ['mobilenetv2']:
         net_type = 'mobilenetv1'
     x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
     x = conv_block(x, [3, 3], [1, 1], channel, net_type)
     x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
     x = conv_block(x, [3, 3], [1, 1], channel, net_type)
-    x_route = x
     x = conv_block(x, [1, 1], [1, 1], channel // 2, net_type)
+    x_route = x
     x = conv_block(x, [3, 3], [1, 1], channel, net_type)
     return x_route, x
 
@@ -202,23 +202,23 @@ def full_darknet_body(x, net_type):
 
 def full_yolo_head(x, route1, route2, num_class, anchors, net_type):
     with tf.name_scope('body_layer1'):
-        x_route, x = full_yolo_body(x, net_type)
+        x_route, x = full_yolo_body(x, 1024, net_type)
     x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1", False)
     fe1, grid1 = yolo(x, anchors[[0, 1, 2]])
 
     with tf.name_scope('head_layer2'):
-        x = conv_block(x_route, [1, 1], [1, 1], route1.shape[-1].value, net_type)
+        x = conv_block(x_route, [1, 1], [1, 1], x_route.shape[-1].value // 2, net_type)
         x = upsample(x, 2)
         x = tf.concat([x, route1], 3)
-        x_route, x = full_yolo_body(x, net_type)
+        x_route, x = full_yolo_body(x, 512, net_type)
     x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2", False)
     fe2, grid2 = yolo(x, anchors[[3, 4, 5]])
 
     with tf.name_scope('head_layer3'):
-        x = conv_block(x_route, [1, 1], [1, 1], route2.shape[-1].value, net_type)
+        x = conv_block(x_route, [1, 1], [1, 1], x_route.shape[-1].value // 2, net_type)
         x = upsample(x, 2)
         x = tf.concat([x, route2], 3)
-        x_route, x = full_yolo_body(x, net_type)
+        x_route, x = full_yolo_body(x, 256, net_type)
     x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head3", False)
     fe3, grid3 = yolo(x, anchors[[6, 7, 8]])
 
