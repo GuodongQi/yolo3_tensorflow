@@ -12,11 +12,11 @@ def get_config():
 
     # load weight_path
     conf.add_argument('-w', '--weight_path', type=str, help='weight path',
-                      default='logs/cnn_tiny/cnn_tiny_model.ckpt')
+                      default='logs/cnn_full/cnn_full_model')
 
     conf.add_argument('--score', default=0.3, type=float, help='score threshold')
 
     conf.add_argument('--classes_path', type=str, help='classes path',
-                      default=join(root, 'model_data', 'voc_classes.txt'))
+                      default=join(root, 'model_data', 'coco_classes.txt'))
 
     return conf.parse_args()

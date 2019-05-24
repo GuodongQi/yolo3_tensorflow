@@ -2,24 +2,26 @@
 from net.yolo3_net import model
 from util.load_weights import load_weight
 import tensorflow as tf
-import sys
 import time
 import numpy as np
+from os.path import join
 
 
 def convert(is_tiny=False):
     if is_tiny:
         anchors = np.array([[1, 1]] * 6)
+        weight_path = join('model_data', 'yolov3_tiny.weights')
+        save_path = join('logs', 'cnn_tiny', 'cnn_tiny_model')
     else:
         anchors = np.array([[1, 1]] * 9)
+        weight_path = join('model_data', 'yolov3.weights')
+        save_path = join('logs', 'cnn_full', 'cnn_full_model')
 
     input_data = tf.placeholder(dtype=tf.float32, shape=(1, 416, 416, 3))
-    with tf.variable_scope("yolo3"):
-        pred = model(input_data, 80, anchors, 'cnn', False, 0.3)
+
+    model(input_data, 80, anchors, 'cnn', False, 0.3)
 
     model_vars_ = tf.global_variables()
-    weight_path = sys.argv[1]
-    save_path = sys.argv[2]
     assert weight_path.endswith('.weights'), '{} is not a .weights files'.format(weight_path)
     assign_ops_ = load_weight(model_vars_, weight_path)
     t0 = time.time()

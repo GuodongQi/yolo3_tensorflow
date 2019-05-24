@@ -14,9 +14,9 @@ def load_weight(var_list, file_path):
         var1 = var_list[i]
         var2 = var_list[i + 1]
         # do something only if we process conv layer
-        if 'conv' in var1.name.split('/')[-2]:
+        if 'cnn' in var1.name:
             # check type of next layer
-            if 'batch' in var2.name.split('/')[-2]:
+            if 'batch' in var2.name:
                 # load batch norm params
                 gamma, beta, mean, var = var_list[i + 1:i + 5]
                 batch_norm_vars = [beta, gamma, mean, var]
@@ -29,14 +29,14 @@ def load_weight(var_list, file_path):
 
                 # we move the pointer by 4, because we loaded 4 variables
                 i += 4
-            elif 'conv' in var2.name.split('/')[-2]:
+            elif 'cnn' in var2.name:
                 # load biases
                 bias = var2
                 bias_shape = bias.shape.as_list()
                 bias_params = np.prod(bias_shape)
                 bias_weights = weights[ptr:ptr + bias_params].reshape(bias_shape)
                 assign_ops.append(tf.assign(bias, bias_weights, validate_shape=True))
-                if 'num_class' in bias.name.split('/')[-3]:  # if num_classes is not 80
+                if 'yolo_head' in bias.name:  # if num_classes is not 80
                     ptr += 255
                 else:
                     ptr += bias_params
@@ -49,11 +49,14 @@ def load_weight(var_list, file_path):
         num_params = np.prod(shape)
         var_weights = weights[ptr:ptr + num_params].reshape((shape[3], shape[2], shape[0], shape[1]))
         # remember to transpose to column-major
-        # var_weights = np.transpose(var_weights, (2, 1, 0, 3))
+        # DarkNet conv_weights are serialized Caffe-style:
+        # (out_dim, in_dim, height, width)
+        # We would like to set these to Tensorflow order:
+        # (height, width, in_dim, out_dim)
         var_weights = np.transpose(var_weights, (2, 3, 1, 0))
         assign_ops.append(tf.assign(var1, var_weights, validate_shape=True))
 
-        if 'num_class' in var1.name.split('/')[-3]:  # if num_classes is not 80
+        if 'yolo_head' in var1.name:  # if num_classes is not 80
             shape_ = shape[:3]
             shape_.append(255)
             ptr += np.prod(shape_)
