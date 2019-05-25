@@ -1,12 +1,11 @@
 import time
-from os import getcwd
 from os.path import join, split
 import tensorflow as tf
 import numpy as np
 import cv2
 
 from net.yolo3_net import model
-from util.box_utils import np_sigmoid, wh2xy_np, nms_np
+from util.box_utils import wh2xy_np, nms_np
 from util.pred_config import get_config
 
 
@@ -65,7 +64,7 @@ class YOLO():
 
         im_data = np.expand_dims(img_[..., ::-1], 0) / 255.0
         boxes = self.sess.run(self.pred, feed_dict={self.input: im_data})
-        score = np_sigmoid(boxes[..., 4:5]) * np_sigmoid(boxes[..., 5:])
+        score = boxes[..., 4:5] * boxes[..., 5:]
         b = 0
 
         # nms
