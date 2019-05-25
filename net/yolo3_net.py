@@ -266,7 +266,7 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
         x = conv_block(x, [3, 3], [1, 1], 512, net_type)
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1")
         fe1 = x
-        fe1, grid1 = yolo(fe1, anchors[[0, 1, 2]])
+        fe1, grid1 = yolo(fe1, anchors[[3, 4, 5]])
 
     with tf.name_scope('head_layer2'):
         x = conv_block(x_route2, [1, 1], [1, 1], 128, net_type)
@@ -275,7 +275,7 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
         x = conv_block(x, [3, 3], [1, 1], 256, net_type)
         x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2")
         fe2 = x
-        fe2, grid2 = yolo(fe2, anchors[[3, 4, 5]])
+        fe2, grid2 = yolo(fe2, anchors[[0, 1, 2]])
 
     fe = tf.concat([fe1, fe2], 1)
     return fe, grid1, grid2
@@ -305,7 +305,7 @@ def yolo(f, anchors):
     return feas, grid
 
 
-def model(x, num_classes, anchors, net_type, cal_loss=False, score_threshold=0.3):
+def model(x, num_classes, anchors, net_type, cal_loss=False):
     batchsize, height, width, _ = x.get_shape().as_list()
     if len(anchors) == 6:
         x, x_route = tiny_darknet_body(x, net_type)
