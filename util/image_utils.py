@@ -91,4 +91,27 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
             xyxy[i, 3] = xyxy[i, 3] - pad_bottom if xyxy[i, 3] - pad_bottom > 0 else 0
     return image_data, xyxy, anchor
 
-# def get_true_gts(gts,grid_shape):
+
+def get_color_table(class_num, seed=200):
+    random.seed(seed)
+    color_table = {}
+    for i in range(class_num):
+        color_table[i] = [random.randint(0, 255) for _ in range(3)]
+    return color_table
+
+
+def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes):
+    for co, bbox in enumerate(picked_boxes):
+        bbox[0] *= w_r
+        bbox[2] *= w_r
+        bbox[1] *= h_r
+        bbox[3] *= h_r
+        color = color_table[int(bbox[5])]
+        tl = int(round(0.002 * max(img.shape[0:2])))
+        t2 = max(tl - 1, 1)  # font thickness
+        label = "{} {:.2f}".format(classes[int(bbox[5])], bbox[4])
+        img = cv2.rectangle(img, tuple(np.int32([bbox[0], bbox[1]])),
+                            tuple(np.int32([bbox[2], bbox[3]])), color, 2)
+        img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1] + 15])),
+                          cv2.FONT_HERSHEY_TRIPLEX, float(tl) / 3, color, thickness=t2, lineType=cv2.LINE_AA)
+    return img

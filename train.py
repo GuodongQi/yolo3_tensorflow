@@ -7,8 +7,8 @@ import numpy as np
 import tensorflow as tf
 
 from net.yolo3_net import model, loss
-from util.box_utils import xy2wh_np, box_anchor_iou, wh2xy_np, nms_np
-from util.image_utils import read_image_and_lable
+from util.box_utils import xy2wh_np, box_anchor_iou, pick_box
+from util.image_utils import read_image_and_lable, plot_rectangle, get_color_table
 from util.train_config import get_config
 from util.utils import sec2time
 
@@ -52,6 +52,8 @@ class YOLO():
 
         self.train_data = self.gts[spl:]
         self.val_data = self.gts[:spl]
+
+        self.color_table = get_color_table(len(self.classes))
 
     def __get_anchors(self):
         """loads the anchors from a file"""
@@ -143,7 +145,7 @@ class YOLO():
         s = sum([g[2] * g[1] for g in grid_shape])
         self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 5 + len(self.classes)])
 
-        losses = loss(pred, self.label, self.anchors, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
+        losses = loss(pred, self.label, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
                       self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
@@ -228,28 +230,14 @@ class YOLO():
 
                 # for visual
                 raw_, boxes, grid = pred_
-                score = boxes[..., 4:5] * boxes[..., 5:]
+
                 vis_img = []
-
                 for b in range(self.batch_size):
-                    idx = np.where(score[b] > 0.5)
-                    box_select = boxes[b][idx[:2]]
-                    box_xywh = box_select[:, :4]
-                    box_xyxy = wh2xy_np(box_xywh)
-                    box_socre = score[b][idx]
-                    clsid = idx[2]
-                    picked_boxes = nms_np(
-                        np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
-                        len(self.classes))
-                    per_img = (img[b] + 1) * 128
-                    for bbox in picked_boxes:
-                        per_img = cv2.rectangle(per_img, tuple(np.int32([bbox[0], bbox[1]])),
-                                                tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
-                        per_img = cv2.putText(per_img, "{} {:.2f}".format(self.classes[int(bbox[5])], bbox[4]),
-                                              tuple(np.int32([bbox[0], bbox[1]])),
-                                              cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
-
+                    picked_boxes = pick_box(boxes[b], self.hw, 0.3, self.classes)
+                    per_img = np.array(img[b] * 255, dtype=np.uint8)
+                    per_img = plot_rectangle(per_img, picked_boxes, 1, 1, self.color_table, self.classes)
                     vis_img.append(per_img)
+
                 ss = sess.run(summary, feed_dict={
                     img_tensor: np.array(vis_img),
                     train_loss_tensor: losses_,

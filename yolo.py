@@ -5,7 +5,8 @@ import numpy as np
 import cv2
 
 from net.yolo3_net import model
-from util.box_utils import wh2xy_np, nms_np
+from util.box_utils import pick_box
+from util.image_utils import get_color_table, plot_rectangle
 from util.pred_config import get_config
 
 
@@ -32,11 +33,13 @@ class YOLO():
         self.input = tf.placeholder(tf.float32, [1] + self.hw + [3])
         self.pred = model(self.input, len(self.classes), self.anchors, net_type, False)
 
+        print('start load net_type: {}_{}_model'.format(net_type, tiny))
         # load weights
         conf = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
         self.sess = tf.Session(config=conf)
         saver = tf.train.Saver()
         saver.restore(self.sess, config.weight_path)
+        self.color_table = get_color_table(len(self.classes))
 
     def _get_anchors(self):
         """loads the anchors from a file"""
@@ -64,44 +67,25 @@ class YOLO():
 
         im_data = np.expand_dims(img_[..., ::-1], 0) / 255.0
         boxes = self.sess.run(self.pred, feed_dict={self.input: im_data})
-        score = boxes[..., 4:5] * boxes[..., 5:]
-        b = 0
 
-        # nms
-        idx = np.where(score[b] > 0.5)
-        box_select = boxes[b][idx[:2]]
-        box_xywh = box_select[:, :4]
-        box_xyxy = wh2xy_np(box_xywh)
-        box_truncated = []
-        for box_k in box_xyxy:
-            box_k[0] = box_k[0] if box_k[0] >= 0 else 0
-            box_k[1] = box_k[1] if box_k[1] >= 0 else 0
-            box_k[2] = box_k[2] if box_k[2] <= self.hw[1] else self.hw[1]
-            box_k[3] = box_k[3] if box_k[3] <= self.hw[0] else self.hw[0]
-            box_truncated.append(box_k)
-        box_xyxy = np.stack(box_truncated)
-        box_socre = score[b][idx]
-        clsid = idx[2]
-        picked_boxes = nms_np(
-            np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
-            len(self.classes))
-        for bbox in picked_boxes:
-            bbox[0] *= w_r
-            bbox[2] *= w_r
-            bbox[1] *= h_r
-            bbox[3] *= h_r
-            img = cv2.rectangle(img, tuple(np.int32([bbox[0], bbox[1]])),
-                                tuple(np.int32([bbox[2], bbox[3]])), (0, 255, 0), 2)
-            img = cv2.putText(img, "{} {:.2f}".format(self.classes[int(bbox[5])], bbox[4]),
-                              tuple(np.int32([bbox[0], bbox[1]+15])),
-                              cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 255, 0))
-        return img
+        vis_img = []
+        for b in range(1):
+            picked_boxes = pick_box(boxes[b], 0.3, self.hw, self.classes)
+            print('find {} boxes'.format(len(picked_boxes)))
+            per_img = img
+            per_img = plot_rectangle(per_img, picked_boxes, w_r, h_r, self.color_table, self.classes)
+            vis_img.append(per_img)
+        return vis_img[0]
 
     def detect_image(self, img_path):
         img = cv2.imread(img_path)
+        if img is None:
+            return None
         img = self.forward(img)
         cv2.imshow('img', img)
+        cv2.imwrite('tiny.jpg', img)
         cv2.waitKey(0)
+        return 1
 
     def detect_video(self, video_path):
         cap = cv2.VideoCapture(video_path)
@@ -121,8 +105,7 @@ class YOLO():
         while True:
             ret, frame = cap.read()
             if ret:
-                img = cv2.resize(frame, tuple(self.hw)[::-1])
-                out = self.forward(img)
+                out = self.forward(frame)
                 time2 = time.time()
                 d_time = time2 - time1
                 time1 = time2
@@ -154,8 +137,6 @@ if __name__ == '__main__':
     else:
         while True:
             img_path = input('input image path:')
-            try:
-                yolo.detect_image(img_path)
-            except:
+            if not yolo.detect_image(img_path):
                 print('check your iamge path ')
-                continue
+            continue
