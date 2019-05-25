@@ -18,7 +18,7 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
         return
     image_raw_data = cv2.imread(f_path)[..., ::-1]  # RGB h*w*c
     height, width = image_raw_data.shape[0], image_raw_data.shape[1]
-    image_data = cv2.resize(image_raw_data, tuple(hw[::-1])) / 128.0 - 1
+    image_data = cv2.resize(image_raw_data, tuple(hw[::-1])) / 255.0
 
     h_scale = hw[0] / height
     w_scale = hw[1] / width
@@ -48,7 +48,6 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
 
     # distort image
     if rand() < 0.5:
-        image_data = (image_data + 1) / 2.0
         x = rgb_to_hsv(image_data)
         hue = rand(-hue, hue)
         sat = rand(1, sat) if rand() < .5 else 1 / rand(1, sat)
@@ -61,7 +60,7 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
         x[x > 1] = 1
         x[x < 0] = 0
 
-        image_data = hsv_to_rgb(x) * 2 - 1  # RGB
+        image_data = hsv_to_rgb(x)  # RGB
     # random pad
     if rand() < .5:
         pad_top = random.randint(0, 25)

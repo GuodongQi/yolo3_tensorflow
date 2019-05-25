@@ -4,7 +4,8 @@ from util.load_weights import load_weight
 import tensorflow as tf
 import time
 import numpy as np
-from os.path import join
+from os.path import join, exists, split
+from os import makedirs
 
 
 def convert(is_tiny=False):
@@ -17,9 +18,11 @@ def convert(is_tiny=False):
         weight_path = join('model_data', 'yolov3.weights')
         save_path = join('logs', 'cnn_full', 'cnn_full_model')
 
+    if not exists(split(save_path)[0]):
+        makedirs(split(save_path)[0])
     input_data = tf.placeholder(dtype=tf.float32, shape=(1, 416, 416, 3))
 
-    model(input_data, 80, anchors, 'cnn', False, 0.3)
+    model(input_data, 80, anchors, 'cnn', False)
 
     model_vars_ = tf.global_variables()
     assert weight_path.endswith('.weights'), '{} is not a .weights files'.format(weight_path)

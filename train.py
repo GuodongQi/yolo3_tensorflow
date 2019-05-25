@@ -134,7 +134,7 @@ class YOLO():
 
     def train(self):
         # pred, losses, op = self.create_model()
-        pred = model(self.input, len(self.classes), self.anchors, config.net_type, True, 0.3)
+        pred = model(self.input, len(self.classes), self.anchors, config.net_type, True)
         grid_shape = [g.get_shape().as_list() for g in pred[1]]
 
         s = sum([g[2] * g[1] for g in grid_shape])
