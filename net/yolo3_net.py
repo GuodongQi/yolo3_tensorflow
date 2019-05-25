@@ -35,7 +35,11 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
             with tf.name_scope('cnn'):
                 # weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, out_channel], 0, 0.01))
                 weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, out_channel]))
-                x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
+                if stride[0] == 2:  # refer to "https://github.com/qqwweee/keras-yolo3/issues/8"
+                    x = tf.pad(x, tf.constant([[0, 0], [1, 0, ], [1, 0], [0, 0]]))
+                    x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'VALID')
+                else:
+                    x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
                 if relu:
                     x = tf.layers.batch_normalization(x)
                     x = tf.nn.leaky_relu(x, leaky_alpha)
@@ -247,9 +251,9 @@ def tiny_darknet_body(x, net_type):
 
     x = conv_block(x, [3, 3], [1, 1], 128, net_type)
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
-    x_route = x
 
     x = conv_block(x, [3, 3], [1, 1], 256, net_type)
+    x_route = x
     x = tf.nn.max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], 'SAME')
 
     x = conv_block(x, [3, 3], [1, 1], 512, net_type)
@@ -265,7 +269,7 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
         x = conv_block(x, [1, 1], [1, 1], 256, net_type)
         x_route2 = x
         x = conv_block(x, [3, 3], [1, 1], 512, net_type)
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1")
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head1", False)
         fe1 = x
         fe1, box1, grid1 = yolo(fe1, anchors[[3, 4, 5]])
 
@@ -274,7 +278,7 @@ def tiny_yolo_head(x, x_route1, num_class, anchors, net_type):
         x = upsample(x, 2)
         x = tf.concat([x, x_route1], 3)
         x = conv_block(x, [3, 3], [1, 1], 256, net_type)
-        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2")
+        x = conv_block(x, [1, 1], [1, 1], 3 * (5 + num_class), 'cnn', "yolo_head2", False)
         fe2 = x
         fe2, box2, grid2 = yolo(fe2, anchors[[0, 1, 2]])
 
@@ -326,11 +330,10 @@ def model(x, num_classes, anchors, net_type, cal_loss=False):
         return boxe
 
 
-def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug_=False):
+def loss(pred, gts, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_threshold, debug_=False):
     """
     :param pred: (batch_size, num_boxes, 3, 5+num_class)[x0 y0 w h ] raw_pres + boxes +grid
     :param gts: shape = (batch_size, num_boxes, 3, 4+4+1+num_class) [xywh,calsses]
-    :param anchors:
     :param input_size: height * width
     :param lambda_coord: lambda
     :param lambda_noobj: lambda
@@ -368,7 +371,7 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
     raw_pred_xy = raw_pred[..., 0:2]
     raw_pred_wh = raw_pred[..., 2:4]
 
-    boxes_scale = 2 - true_gt_wh[..., 0] / i_width * true_gt_wh[..., 1] /i_height
+    boxes_scale = 2 - true_gt_wh[..., 0] / i_width * true_gt_wh[..., 1] / i_height
 
     varss = tf.trainable_variables()
     l2_loss = tf.reduce_sum([tf.nn.l2_loss(var) for var in varss]) * 0.001
@@ -381,7 +384,8 @@ def loss(pred, gts, anchors, input_size, lambda_coord, lambda_noobj, lambda_cls,
     n_noob = batchsize
 
     loss_xy = tf.reduce_sum(
-        lambda_coord * masks * boxes_scale * binary_cross(labels=raw_gt_xy, pred=raw_pred_xy), name='debug_loss_xy') / n_xywh
+        lambda_coord * masks * boxes_scale * binary_cross(labels=raw_gt_xy, pred=raw_pred_xy),
+        name='debug_loss_xy') / n_xywh
     loss_wh = tf.reduce_sum(
         lambda_coord * masks * boxes_scale * 0.5 * tf.reduce_sum(
             tf.math.square(raw_pred_wh - raw_gt_wh),
