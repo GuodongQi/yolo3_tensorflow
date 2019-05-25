@@ -6,12 +6,13 @@ import time
 import numpy as np
 from os.path import join, exists, split
 from os import makedirs
+import sys
 
 
 def convert(is_tiny=False):
     if is_tiny:
         anchors = np.array([[1, 1]] * 6)
-        weight_path = join('model_data', 'yolov3_tiny.weights')
+        weight_path = join('model_data', 'yolov3-tiny.weights')
         save_path = join('logs', 'cnn_tiny', 'cnn_tiny_model')
     else:
         anchors = np.array([[1, 1]] * 9)
@@ -38,4 +39,10 @@ def convert(is_tiny=False):
 
 
 if __name__ == '__main__':
-    convert(False)
+    boolen = sys.argv[1]
+    if boolen.lower() == 'tiny':
+        convert(True)
+    elif boolen.lower() == 'full':
+        convert(False)
+    else:
+        raise Exception('unkonwm argument')
