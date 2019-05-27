@@ -122,7 +122,7 @@ class YOLO():
                             gd[j, i, k, 8] = 1
                             gd[j, i, k, 9 + int(per_label[4])] = 1
 
-                        gds.append(gd.reshape([-1, 3, 5 + len(self.classes)]))
+                        gds.append(gd.reshape([-1, 3, 9 + len(self.classes)]))
                     labels.append(np.concatenate(gds, 0))
                     b += 1
                     if len(labels) == self.batch_size:
@@ -143,7 +143,7 @@ class YOLO():
         grid_shape = [g.get_shape().as_list() for g in pred[2]]
 
         s = sum([g[2] * g[1] for g in grid_shape])
-        self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 5 + len(self.classes)])
+        self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 9 + len(self.classes)])
 
         losses = loss(pred, self.label, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
                       self.iou_threshold, config.debug)

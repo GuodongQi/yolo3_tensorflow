@@ -384,21 +384,21 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_thre
     n_noob = batchsize
 
     loss_xy = tf.reduce_sum(
-        lambda_coord * masks * boxes_scale * binary_cross(labels=raw_gt_xy, pred=raw_pred_xy),
+        lambda_coord * masks * boxes_scale * tf.reduce_sum(binary_cross(labels=raw_gt_xy, pred=raw_pred_xy), -1),
         name='debug_loss_xy') / n_xywh
     loss_wh = tf.reduce_sum(
         lambda_coord * masks * boxes_scale * 0.5 * tf.reduce_sum(
             tf.math.square(raw_pred_wh - raw_gt_wh),
             -1), name='debug_loss_wh') / n_xywh
     loss_obj_confidence = tf.reduce_sum(
-        masks * binary_cross(labels=masks, pred=pred_boxes[..., 4]), name='debug_loss_obj') / n_xywh
+        masks * binary_cross(labels=masks, pred=raw_pred[..., 4]), name='debug_loss_obj') / n_xywh
 
     loss_noobj_confidence = tf.reduce_sum(
-        lambda_noobj * masks_noobj * binary_cross(labels=masks, pred=pred_boxes[..., 4]),
+        lambda_noobj * masks_noobj * binary_cross(labels=masks, pred=raw_pred[..., 4]),
         name='debug_loss_noobj') / n_noob
     loss_cls = tf.reduce_sum(
         masks * lambda_cls * tf.reduce_sum(
-            binary_cross(labels=gts[..., 9:], pred=pred_boxes[..., 5:]), -1), name='debug_loss_cls'
+            binary_cross(labels=gts[..., 9:], pred=raw_pred[..., 5:]), -1), name='debug_loss_cls'
     ) / n_xywh
     if debug_:
         p = tf.print("loss_xy", loss_xy, "loss_wh", loss_wh, "loss_obj_confidence", loss_obj_confidence,
