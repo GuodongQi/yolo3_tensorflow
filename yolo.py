@@ -1,13 +1,14 @@
 import time
 from os.path import join, split
-import tensorflow as tf
-import numpy as np
-import cv2
 
+import cv2
+import numpy as np
+import tensorflow as tf
+
+from config.pred_config import get_config
 from net.yolo3_net import model
 from util.box_utils import pick_box
 from util.image_utils import get_color_table, plot_rectangle
-from util.pred_config import get_config
 
 
 class YOLO():
@@ -21,7 +22,7 @@ class YOLO():
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
-        self.hw = [416, 416]
+        self.hw = [320, 640]
 
         if tiny == 'tiny':
             assert 6 == len(
@@ -91,7 +92,7 @@ class YOLO():
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise IOError("Couldn't open webcam or video")
-        video_FourCC = int(cap.get(cv2.CAP_PROP_FOURCC))
+        video_FourCC = -1
         video_fps = cap.get(cv2.CAP_PROP_FPS)
         width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -116,8 +117,8 @@ class YOLO():
                     total_time -= 1
                     curr_fps = 0
 
-                out = cv2.putText(out, fps, tuple(np.int32([20, 20])),
-                                  cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255))
+                out = cv2.putText(out, fps, tuple(np.int32([20, 30])),
+                                  cv2.FONT_HERSHEY_TRIPLEX, 1, (0, 0, 255))
                 out = cv2.resize(out, (width, height))
                 cv2.namedWindow("result", cv2.WINDOW_AUTOSIZE)
                 cv2.imshow('result', out)

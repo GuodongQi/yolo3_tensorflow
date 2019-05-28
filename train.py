@@ -5,10 +5,10 @@ from os.path import join, split
 import numpy as np
 import tensorflow as tf
 
+from config.train_config import get_config
 from net.yolo3_net import loss, model
 from util.box_utils import box_anchor_iou, pick_box, xy2wh_np
 from util.image_utils import get_color_table, plot_rectangle, read_image_and_lable
-from util.train_config import get_config
 from util.utils import sec2time
 
 
@@ -25,7 +25,7 @@ class YOLO():
 
         self.classes = self.__get_classes()
         self.anchors = self.__get_anchors()
-        self.hw = [320, 640]
+        self.hw = [416, 416]
         if config.tiny:
             assert 6 == len(
                 self.anchors), 'model type does not match with anchors, check anchors or type param'

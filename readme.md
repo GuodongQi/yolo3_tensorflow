@@ -51,7 +51,7 @@ run `python util/kmeans.py` to generate anchors. Note that, anchor number
 should be 9 if you wang to train full yolo, else it should be 6. 
 
 3. Start to train  
-The train arguments can be seen in [util/train_config.py](util/train_config.py).      
+The train arguments can be seen in [config/train_config.py](config/train_config.py).      
 ```
 usage: train.py [-h] [-n NET_TYPE] [-t TINY] [-b BATCH_SIZE] [-e EPOCH]
                 [-lr LEARN_RATE] [-pt PRETRAIN_PATH]
@@ -95,7 +95,7 @@ the `-n` (cnn, mobilenetv1 or mobilenetv2) and `-t` (True or False) arguments.
     You can use Tensorboard to watch the training trend.  
     Run `Tensorboard --logdir ./  --host 127.0.0.1`   
 ## Predict
-The prediction arguments can be seen in [util/pred_config.py](util/pred_config.py).
+The prediction arguments can be seen in [config/pred_config.py](config/pred_config.py).
 ```
 usage: yolo.py [-h] [-i IMAGE] [-v VIDEO] [-w WEIGHT_PATH] [--score SCORE]
                [--classes_path CLASSES_PATH]
