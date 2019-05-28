@@ -1,5 +1,5 @@
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
 
 def box_anchor_iou(b1, b2):
@@ -36,7 +36,7 @@ def box_anchor_iou(b1, b2):
 
 def pick_box(boxes, score_threshold, hw, classes):
     """
-    :param boxes: (boxes_num, 5+numclass)
+    :param boxes: (boxes_num, 5+numclass),xywh
     :param score_threshold: score_threshold
     :param hw: sacled_image height and width
     :param classes: classes num

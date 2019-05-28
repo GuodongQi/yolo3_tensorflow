@@ -1,9 +1,10 @@
 # coding=utf8
 
+import random
+
 import cv2
 import numpy as np
-from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
-import random
+from matplotlib.colors import hsv_to_rgb, rgb_to_hsv
 
 
 def rand(a=0., b=1.):
@@ -100,16 +101,19 @@ def get_color_table(class_num, seed=200):
     return color_table
 
 
-def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes):
+def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes, is_gt=False):
     for co, bbox in enumerate(picked_boxes):
         bbox[0] *= w_r
         bbox[2] *= w_r
         bbox[1] *= h_r
         bbox[3] *= h_r
         color = color_table[int(bbox[5])]
-        tl = int(round(0.002 * max(img.shape[0:2])))
+        tl = int(min(round(0.002 * max(img.shape[0:2])), min(bbox[3] - bbox[1], bbox[2] - bbox[0])))
         t2 = max(tl - 1, 1)  # font thickness
-        label = "{} {:.2f}".format(classes[int(bbox[5])], bbox[4])
+        if is_gt:
+            label = "gts: {}".format(classes[int(bbox[5])])
+        else:
+            label = "{} {:.2f}".format(classes[int(bbox[5])], bbox[4])
         img = cv2.rectangle(img, tuple(np.int32([bbox[0], bbox[1]])),
                             tuple(np.int32([bbox[2], bbox[3]])), color, 2)
         img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1] + 15])),

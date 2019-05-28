@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from util.box_utils import box_iou, xy2wh, wh2xy
+from util.box_utils import box_iou
 
 """
 (1280 * 640)
@@ -41,7 +41,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                 else:
                     x = tf.nn.conv2d(x, weight, [1, stride[0], stride[1], 1], 'SAME')
                 if relu:
-                    x = tf.layers.batch_normalization(x)
+                    x = tf.layers.batch_normalization(x, training=True)
                     x = tf.nn.leaky_relu(x, leaky_alpha)
                 else:
                     bias = tf.Variable(tf.zeros(shape=out_channel))
@@ -51,7 +51,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                 # depthwise_weight = tf.Variable(tf.truncated_normal([filters[0], filters[1], in_channel, 1], 0, 0.01))
                 depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], in_channel, 1]))
                 x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
-                x = tf.layers.batch_normalization(x)
+                x = tf.layers.batch_normalization(x, training=True)
                 x = tf.nn.relu6(x)
 
             with tf.name_scope('pointwise'):
@@ -59,7 +59,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, out_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
                 if relu:
-                    x = tf.layers.batch_normalization(x)
+                    x = tf.layers.batch_normalization(x, training=True)
                     x = tf.nn.relu6(x)
                 else:
                     bias = tf.Variable(tf.zeros(shape=out_channel))
@@ -70,7 +70,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
             with tf.name_scope('expand_pointwise'):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
-                x = tf.layers.batch_normalization(x)
+                x = tf.layers.batch_normalization(x, training=True)
                 x = tf.nn.relu6(x)
             with tf.name_scope('depthwise'):
                 depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], tmp_channel, 1]))
@@ -79,7 +79,7 @@ def conv_block(x, filters, stride, out_channel, net_type, name='', relu=True):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
                 if relu:
-                    x = tf.layers.batch_normalization(x)
+                    x = tf.layers.batch_normalization(x, training=True)
                 else:
                     bias = tf.Variable(tf.zeros(shape=out_channel))
                     x += bias
@@ -103,7 +103,7 @@ def residual(x, net_type, out_channel=1, expand_time=1, stride=1):
         with tf.name_scope('expand_pointwise'):
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
-            x = tf.layers.batch_normalization(x)
+            x = tf.layers.batch_normalization(x, training=True)
             x = tf.nn.relu6(x)
         with tf.name_scope('depthwise'):
             depthwise_weight = tf.Variable(xavier_initializer([3, 3, tmp_channel, 1]))
@@ -111,7 +111,7 @@ def residual(x, net_type, out_channel=1, expand_time=1, stride=1):
         with tf.name_scope('project_pointwise'):
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
-            x = tf.layers.batch_normalization(x)
+            x = tf.layers.batch_normalization(x, training=True)
         x += shortcut
 
     return x
@@ -368,10 +368,8 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_thre
         ignore_mask.append(ignore_mask_)
     ignore_mask = tf.concat(ignore_mask, 0, name='debug_ignore_mask')
 
-    raw_pred_xy = raw_pred[..., 0:2]
-    raw_pred_wh = raw_pred[..., 2:4]
-
     boxes_scale = 2 - true_gt_wh[..., 0] / i_width * true_gt_wh[..., 1] / i_height
+    # boxes_scale = 1
 
     varss = tf.trainable_variables()
     l2_loss = tf.reduce_sum([tf.nn.l2_loss(var) for var in varss]) * 0.001
@@ -384,11 +382,13 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_thre
     n_noob = batchsize
 
     loss_xy = tf.reduce_sum(
-        lambda_coord * masks * boxes_scale * tf.reduce_sum(binary_cross(labels=raw_gt_xy, pred=raw_pred_xy), -1),
-        name='debug_loss_xy') / n_xywh
+        lambda_coord * masks * boxes_scale * tf.reduce_sum(
+            tf.math.square(raw_gt_xy - tf.math.sigmoid(raw_pred[..., 0:2]))
+            # binary_cross(labels=raw_gt_xy, pred=raw_pred_xy)
+            , -1), name='debug_loss_xy') / n_xywh
     loss_wh = tf.reduce_sum(
-        lambda_coord * masks * boxes_scale * 0.5 * tf.reduce_sum(
-            tf.math.square(raw_pred_wh - raw_gt_wh),
+        lambda_coord * masks * boxes_scale * tf.reduce_sum(
+            tf.math.square(raw_gt_wh - raw_pred[..., 2:4]),
             -1), name='debug_loss_wh') / n_xywh
     loss_obj_confidence = tf.reduce_sum(
         masks * binary_cross(labels=masks, pred=raw_pred[..., 4]), name='debug_loss_obj') / n_xywh

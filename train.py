@@ -2,13 +2,12 @@ import time
 from os import getcwd
 from os.path import join, split
 
-import cv2
 import numpy as np
 import tensorflow as tf
 
-from net.yolo3_net import model, loss
-from util.box_utils import xy2wh_np, box_anchor_iou, pick_box
-from util.image_utils import read_image_and_lable, plot_rectangle, get_color_table
+from net.yolo3_net import loss, model
+from util.box_utils import box_anchor_iou, pick_box, xy2wh_np
+from util.image_utils import get_color_table, plot_rectangle, read_image_and_lable
 from util.train_config import get_config
 from util.utils import sec2time
 
@@ -19,14 +18,14 @@ class YOLO():
         self.epoch = config.epoch
         self.learn_rate = config.learn_rate
 
-        self.lambda_coord = 5
-        self.lambda_noobj = 0.5
+        self.lambda_coord = 1
+        self.lambda_noobj = 0.2
         self.lambda_cls = 1
-        self.iou_threshold = 0.6
+        self.iou_threshold = 0.5
 
         self.classes = self.__get_classes()
         self.anchors = self.__get_anchors()
-        self.hw = [416, 416]
+        self.hw = [320, 640]
         if config.tiny:
             assert 6 == len(
                 self.anchors), 'model type does not match with anchors, check anchors or type param'
@@ -111,8 +110,8 @@ class YOLO():
 
                             gd[j, i, k, 0] = x0 / w_r - i
                             gd[j, i, k, 1] = y0 / h_r - j
-                            gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-15)
-                            gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-15)
+                            gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-5)
+                            gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-5)
 
                             gd[j, i, k, 4] = x0
                             gd[j, i, k, 5] = y0
@@ -144,21 +143,25 @@ class YOLO():
 
         s = sum([g[2] * g[1] for g in grid_shape])
         self.label = tf.placeholder(tf.float32, [self.batch_size, s, 3, 9 + len(self.classes)])
-
+        # for data in self.generate_data(grid_shape):
+        #     print()
         losses = loss(pred, self.label, self.hw, self.lambda_coord, self.lambda_noobj, self.lambda_cls,
                       self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
-        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        var_list = tf.all_variables()
+
+        with tf.control_dependencies(update_ops):
             op = opt.minimize(losses)
 
         # summary
         writer = tf.summary.FileWriter(self.log_path)
-        img_tensor = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
+        img_tensor = tf.placeholder(tf.float32, [2 * self.batch_size] + self.hw + [3])
         train_loss_tensor = tf.placeholder(tf.float32)
         val_loss_tensor = tf.placeholder(tf.float32)
         tf.summary.scalar('train_loss', train_loss_tensor)
         tf.summary.scalar('val_loss', val_loss_tensor)
-        tf.summary.image('img_vis', img_tensor, self.batch_size)
+        tf.summary.image('img', img_tensor, 2 * self.batch_size)
         summary = tf.summary.merge_all()
 
         conf = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
@@ -166,7 +169,7 @@ class YOLO():
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
 
-        saver = tf.train.Saver(max_to_keep=1)
+        saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
 
         # init
         init = tf.global_variables_initializer()
@@ -176,16 +179,17 @@ class YOLO():
             try:
                 print('try to restore the whole graph')
                 saver.restore(sess, self.pretrain_path)
+                print('finished')
             except:
                 print('failed to restore the whole graph')
                 flag = 1
             if flag:
                 try:
                     print('try to restore the graph body')
-                    vs = tf.trainable_variables()
-                    restore_weights = [v for v in vs if 'yolo_head' not in v.name]
+                    restore_weights = [v for v in var_list if 'yolo_head' not in v.name]
                     sv = tf.train.Saver(var_list=restore_weights)
                     sv.restore(sess, self.pretrain_path)
+                    print('finished')
                 except Exception:
                     raise Exception('restore body faild, please check the pretained weight')
 
@@ -233,19 +237,28 @@ class YOLO():
 
                 vis_img = []
                 for b in range(self.batch_size):
-                    picked_boxes = pick_box(boxes[b], self.hw, 0.3, self.classes)
+                    picked_boxes = pick_box(boxes[b], 0.3, self.hw, self.classes)
                     per_img = np.array(img[b] * 255, dtype=np.uint8)
-                    per_img = plot_rectangle(per_img, picked_boxes, 1, 1, self.color_table, self.classes)
-                    vis_img.append(per_img)
+                    # draw pred
+                    per_img_ = per_img.copy()
+                    per_img_ = plot_rectangle(per_img_, picked_boxes, 1, 1, self.color_table, self.classes)
+                    vis_img.append(per_img_)
+
+                    # draw gts
+                    per_img_ = per_img.copy()
+                    per_label = label[b]
+                    picked_boxes = pick_box(per_label[..., 4:], 0.3, self.hw, self.classes)
+                    per_img_ = plot_rectangle(per_img_, picked_boxes, 1, 1, self.color_table, self.classes, True)
+                    vis_img.append(per_img_)
 
                 ss = sess.run(summary, feed_dict={
                     img_tensor: np.array(vis_img),
                     train_loss_tensor: losses_,
                     val_loss_tensor: val_loss_
                 })
-                writer.add_summary(ss, step)
-                saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model')
-                           )
+                writer.add_summary(ss, epoch)
+                saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model'), write_meta_graph=False,
+                           write_state=False)
                 print('epoch:{} train_loss:{:< .3f} val_loss:{:< .3f}'.format(
                     epoch, losses_, val_loss_))
                 epoch += 1
