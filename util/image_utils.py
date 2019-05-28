@@ -115,7 +115,7 @@ def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes, is_gt=Fals
         else:
             label = "{} {:.2f}".format(classes[int(bbox[5])], bbox[4])
         img = cv2.rectangle(img, tuple(np.int32([bbox[0], bbox[1]])),
-                            tuple(np.int32([bbox[2], bbox[3]])), color, 2)
-        img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1] + 15])),
+                            tuple(np.int32([bbox[2], bbox[3]])), color, 3)
+        img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1]])),
                           cv2.FONT_HERSHEY_TRIPLEX, float(tl) / 3, color, thickness=t2, lineType=cv2.LINE_AA)
     return img

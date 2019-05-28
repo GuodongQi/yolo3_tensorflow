@@ -19,13 +19,13 @@ These 5 frameworks are provided in this repository.
 ## Quick start
 * cnn full yolo3
   1. Download official [yolov3.weights](https://pjreddie.com/media/files/yolov3.weights) and put it on `model_data` floder of project.
-  2. Run the command `python convert.py full`  to convert weights to TensorFlow checkpoint file, which will locate in `logs/cnn_full/` and named `cnn_full_model.data-00000-of-00001`
+  2. Run the command `python util/convert.py full`  to convert weights to TensorFlow checkpoint file, which will locate in `logs/cnn_full/` and named `cnn_full_model.data-00000-of-00001`
   3. Run the command `python yolo.py` or `python yolo.py -w logs/cnn_full/cnn_full_model`  and input the image path to detect.
   4. Detect example:  
      <img src="images/full.jpg"/>
 * cnn tiny yolo3
   1. Download official [yolov3-tiny.weights](https://pjreddie.com/media/files/yolov3-tiny.weights) and put it on `model_data` floder of project.
-  2. Run the command `python convert.py tiny`  to convert weights to TensorFlow checkpoint file, which will locate in `logs/cnn_tiny/` and named `cnn_tiny_model.data-00000-of-00001`
+  2. Run the command `python util/convert.py tiny`  to convert weights to TensorFlow checkpoint file, which will locate in `logs/cnn_tiny/` and named `cnn_tiny_model.data-00000-of-00001`
   3. Run the command `python yolo.py -w logs/cnn_tiny/cnn_tiny_model` and input the image path to detect.
   4. Detect example:  
      <img src="images/tiny.jpg"/>
@@ -37,7 +37,7 @@ Before training, you should generate your own annotation file and class names fi
 One row for one image  
 Row format: image_file_path box1 box2 ... boxN  
 Box format: x_min,y_min,x_max,y_max,class_id (no space)  
-For VOC dataset, try `python voc_annotation.py`  
+For VOC dataset, try `python util/voc_annotation.py`  
 For your own dataset, you should change the [voc_annotation.py](voc_annotation.py)  
 Here is an example:
 ```
@@ -47,7 +47,7 @@ path/to/img2.jpg 120,300,250,600,2
 ```
 
 2. Prepare yolo anchors   
-run `python kmeans.py` to generate anchors. Note that, anchor number 
+run `python util/kmeans.py` to generate anchors. Note that, anchor number 
 should be 9 if you wang to train full yolo, else it should be 6. 
 
 3. Start to train  

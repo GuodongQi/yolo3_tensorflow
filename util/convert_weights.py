@@ -1,12 +1,14 @@
 # coding=utf-8
+import sys
+import time
+from os import makedirs
+from os.path import exists, join, split
+
+import numpy as np
+import tensorflow as tf
+
 from net.yolo3_net import model
 from util.load_weights import load_weight
-import tensorflow as tf
-import time
-import numpy as np
-from os.path import join, exists, split
-from os import makedirs
-import sys
 
 
 def convert(is_tiny=False):
