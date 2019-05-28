@@ -18,10 +18,10 @@ class YOLO():
         self.epoch = config.epoch
         self.learn_rate = config.learn_rate
 
-        self.lambda_coord = 1
-        self.lambda_noobj = 0.2
+        self.lambda_coord = 5
+        self.lambda_noobj = 0.5
         self.lambda_cls = 1
-        self.iou_threshold = 0.5
+        self.iou_threshold = 0.6
 
         self.classes = self.__get_classes()
         self.anchors = self.__get_anchors()
@@ -179,7 +179,6 @@ class YOLO():
             try:
                 print('try to restore the whole graph')
                 saver.restore(sess, self.pretrain_path)
-                print('finished')
             except:
                 print('failed to restore the whole graph')
                 flag = 1
@@ -189,7 +188,6 @@ class YOLO():
                     restore_weights = [v for v in var_list if 'yolo_head' not in v.name]
                     sv = tf.train.Saver(var_list=restore_weights)
                     sv.restore(sess, self.pretrain_path)
-                    print('finished')
                 except Exception:
                     raise Exception('restore body faild, please check the pretained weight')
 
