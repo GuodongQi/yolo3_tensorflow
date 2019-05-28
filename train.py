@@ -215,24 +215,8 @@ class YOLO():
 
             t0 = time.time()
             if idx == 0:
-                # cal vaild_loss
-                val_loss_ = 0
-                val_step = 0
-                for val_data in self.generate_data(grid_shape, is_val=True):
-                    img, label = val_data
-                    _, losses__ = sess.run([pred, losses], {
-                        self.input: img,
-                        self.label: label
-                    })
-                    val_loss_ += losses__
-                    val_step += self.batch_size
-                    if val_step >= len(self.val_data):
-                        break
-                val_loss_ /= (val_step / self.batch_size)
-
                 # for visual
                 raw_, boxes, grid = pred_
-
                 vis_img = []
                 for b in range(self.batch_size):
                     picked_boxes = pick_box(boxes[b], 0.3, self.hw, self.classes)
@@ -248,6 +232,21 @@ class YOLO():
                     picked_boxes = pick_box(per_label[..., 4:], 0.3, self.hw, self.classes)
                     per_img_ = plot_rectangle(per_img_, picked_boxes, 1, 1, self.color_table, self.classes, True)
                     vis_img.append(per_img_)
+
+                # cal vaild_loss
+                val_loss_ = 0
+                val_step = 0
+                for val_data in self.generate_data(grid_shape, is_val=True):
+                    img, label = val_data
+                    _, losses__ = sess.run([pred, losses], {
+                        self.input: img,
+                        self.label: label
+                    })
+                    val_loss_ += losses__
+                    val_step += self.batch_size
+                    if val_step >= len(self.val_data):
+                        break
+                val_loss_ /= (val_step / self.batch_size)
 
                 ss = sess.run(summary, feed_dict={
                     img_tensor: np.array(vis_img),

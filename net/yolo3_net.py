@@ -383,8 +383,8 @@ def loss(pred, gts, input_size, lambda_coord, lambda_noobj, lambda_cls, iou_thre
 
     loss_xy = tf.reduce_sum(
         lambda_coord * masks * boxes_scale * tf.reduce_sum(
-            tf.math.square(raw_gt_xy - tf.math.sigmoid(raw_pred[..., 0:2]))
-            # binary_cross(labels=raw_gt_xy, pred=raw_pred_xy)
+            # tf.math.square(raw_gt_xy - tf.math.sigmoid(raw_pred[..., 0:2]))
+            binary_cross(labels=raw_gt_xy, pred=raw_pred[..., 0:2])
             , -1), name='debug_loss_xy') / n_xywh
     loss_wh = tf.reduce_sum(
         lambda_coord * masks * boxes_scale * tf.reduce_sum(
