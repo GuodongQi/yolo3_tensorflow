@@ -22,7 +22,7 @@ class YOLO():
 
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
-        self.hw = [320, 640]
+        self.hw = [416, 416]
 
         if tiny == 'tiny':
             assert 6 == len(

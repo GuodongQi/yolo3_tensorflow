@@ -69,6 +69,9 @@ class YOLO():
         return class_names
 
     def generate_data(self, grid_shape, is_val=False):
+
+        gds_init = [np.zeros(g_shape[1:3] + [3, 9 + len(self.classes)]) for g_shape in grid_shape]
+
         idx = 0
         if is_val:
             gts = self.val_data
@@ -93,35 +96,33 @@ class YOLO():
                     img_files.append(img)
                     _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
 
-                    gds = []
-                    for g_id, g_shape in enumerate(grid_shape):
-                        anchors = self.anchors[[g_id, g_id + 1, g_id + 2]]
-                        gd = np.zeros(g_shape[1:3] + [3, 9 + len(self.classes)])
-                        h_r = self.hw[0] / gd.shape[0]
-                        w_r = self.hw[1] / gd.shape[1]
-                        for per_label in _label_:
-                            x0, y0, w, h = per_label[:4]
-                            if w == 0 or h == 0:
-                                continue
-                            i = int(np.floor(x0 / w_r))
-                            j = int(np.floor(y0 / h_r))
-                            box_iou = box_anchor_iou(anchors, per_label[2:4])
-                            k = np.argmax(box_iou)
+                    gds = gds_init.copy()
+                    for per_label in _label_:
+                        x0, y0, w, h = per_label[:4]
+                        if w == 0 or h == 0:
+                            continue
+                        box_iou = box_anchor_iou(self.anchors, per_label[2:4])
+                        k = np.argmax(box_iou)
+                        div, mod = divmod(k, 3)
+                        h_r = self.hw[0] / gds[div].shape[0]
+                        w_r = self.hw[0] / gds[div].shape[1]
+                        i = int(np.floor(x0 / w_r))
+                        j = int(np.floor(y0 / h_r))
 
-                            gd[j, i, k, 0] = x0 / w_r - i
-                            gd[j, i, k, 1] = y0 / h_r - j
-                            gd[j, i, k, 2] = np.log(w / anchors[k, 0] + 1e-5)
-                            gd[j, i, k, 3] = np.log(h / anchors[k, 1] + 1e-5)
+                        gds[div][j, i, k, 0] = x0 / w_r - i
+                        gds[div][j, i, k, 1] = y0 / h_r - j
+                        gds[div][j, i, k, 2] = np.log(w / self.anchors[k, 0] + 1e-5)
+                        gds[div][j, i, k, 3] = np.log(h / self.anchors[k, 1] + 1e-5)
 
-                            gd[j, i, k, 4] = x0
-                            gd[j, i, k, 5] = y0
-                            gd[j, i, k, 6] = w
-                            gd[j, i, k, 7] = h
+                        gds[div][j, i, k, 4] = x0
+                        gds[div][j, i, k, 5] = y0
+                        gds[div][j, i, k, 6] = w
+                        gds[div][j, i, k, 7] = h
 
-                            gd[j, i, k, 8] = 1
-                            gd[j, i, k, 9 + int(per_label[4])] = 1
+                        gds[div][j, i, k, 8] = 1
+                        gds[div][j, i, k, 9 + int(per_label[4])] = 1
 
-                        gds.append(gd.reshape([-1, 3, 9 + len(self.classes)]))
+                    gds = [gd.reshape(-1, 3, 9 + len(self.classes)) for gd in gds]
                     labels.append(np.concatenate(gds, 0))
                     b += 1
                     if len(labels) == self.batch_size:
@@ -189,7 +190,7 @@ class YOLO():
                     sv = tf.train.Saver(var_list=restore_weights)
                     sv.restore(sess, self.pretrain_path)
                 except Exception:
-                    raise Exception('restore body faild, please check the pretained weight')
+                    raise Exception('restore body failed, please check the pretained weight')
 
         total_step = int(np.ceil(len(self.train_data) / self.batch_size)) * self.epoch
 

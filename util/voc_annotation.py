@@ -43,3 +43,11 @@ for i in range(0, len(annotation_files), 1):
 
 list_file_train.close()
 # list_file_val.close()
+# clean dataset
+with open(wd + '/model_data/train.txt', 'r') as f1:
+    old_line = f1.readlines()
+with open(wd + '/model_data/train.txt', 'w') as f2:
+    for line in old_line:
+        line_ = line.split(' ')
+        if len(line_) > 1:
+            f2.write(line)
