@@ -1,4 +1,5 @@
 import time
+from copy import deepcopy
 from os import getcwd
 from os.path import join, split
 
@@ -88,41 +89,41 @@ class YOLO():
                     b = 0
                 else:
                     if not res:
-                        b += 1
-                        continue
+                        raise Exception('check your dataset, it has none label')
 
                     img, _label, _ = res
 
                     img_files.append(img)
                     _label_ = np.concatenate([xy2wh_np(_label[:, :4]), _label[:, 4:]], -1)  # change to xywh
 
-                    gds = gds_init.copy()
+                    gds = deepcopy(gds_init)
                     for per_label in _label_:
                         x0, y0, w, h = per_label[:4]
                         if w == 0 or h == 0:
                             continue
                         box_iou = box_anchor_iou(self.anchors, per_label[2:4])
                         k = np.argmax(box_iou)
-                        div, mod = divmod(k, 3)
+                        div, mod = divmod(int(k), 3)
+                        div = len(grid_shape) - 1 - div
                         h_r = self.hw[0] / gds[div].shape[0]
-                        w_r = self.hw[0] / gds[div].shape[1]
+                        w_r = self.hw[1] / gds[div].shape[1]
                         i = int(np.floor(x0 / w_r))
                         j = int(np.floor(y0 / h_r))
 
-                        gds[div][j, i, k, 0] = x0 / w_r - i
-                        gds[div][j, i, k, 1] = y0 / h_r - j
-                        gds[div][j, i, k, 2] = np.log(w / self.anchors[k, 0] + 1e-5)
-                        gds[div][j, i, k, 3] = np.log(h / self.anchors[k, 1] + 1e-5)
+                        gds[div][j, i, mod, 0] = x0 / w_r - i
+                        gds[div][j, i, mod, 1] = y0 / h_r - j
+                        gds[div][j, i, mod, 2] = np.log(w / self.anchors[k, 0] + 1e-5)
+                        gds[div][j, i, mod, 3] = np.log(h / self.anchors[k, 1] + 1e-5)
 
-                        gds[div][j, i, k, 4] = x0
-                        gds[div][j, i, k, 5] = y0
-                        gds[div][j, i, k, 6] = w
-                        gds[div][j, i, k, 7] = h
+                        gds[div][j, i, mod, 4] = x0
+                        gds[div][j, i, mod, 5] = y0
+                        gds[div][j, i, mod, 6] = w
+                        gds[div][j, i, mod, 7] = h
 
-                        gds[div][j, i, k, 8] = 1
-                        gds[div][j, i, k, 9 + int(per_label[4])] = 1
+                        gds[div][j, i, mod, 8] = 1
+                        gds[div][j, i, mod, 9 + int(per_label[4])] = 1
 
-                    gds = [gd.reshape(-1, 3, 9 + len(self.classes)) for gd in gds]
+                    gds = [gd.reshape([-1, 3, 9 + len(self.classes)]) for gd in gds]
                     labels.append(np.concatenate(gds, 0))
                     b += 1
                     if len(labels) == self.batch_size:
@@ -150,7 +151,7 @@ class YOLO():
                       self.iou_threshold, config.debug)
         opt = tf.train.AdamOptimizer(self.learn_rate)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        var_list = tf.all_variables()
+        var_list = tf.global_variables()
 
         with tf.control_dependencies(update_ops):
             op = opt.minimize(losses)
@@ -212,9 +213,8 @@ class YOLO():
             t1 = time.time()
             print('step:{:<d}/{} epoch:{} loss:{:< .3f} ETA:{}'.format(
                 step, total_step, epoch, losses_,
-                sec2time((t1 - t0) * (total_step - step))))
+                sec2time((t1 - t0) * (total_step / step - 1))))
 
-            t0 = time.time()
             if idx == 0:
                 # for visual
                 raw_, boxes, grid = pred_
