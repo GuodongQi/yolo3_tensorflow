@@ -34,10 +34,11 @@ def box_anchor_iou(b1, b2):
     return iou
 
 
-def pick_box(boxes, score_threshold, hw, classes):
+def pick_box(boxes, score_threshold, nms_iou_threshold, hw, classes):
     """
     :param boxes: (boxes_num, 5+numclass),xywh
     :param score_threshold: score_threshold
+    :param nms_iou_threshold: nms iou_threshold
     :param hw: sacled_image height and width
     :param classes: classes num
     :return:
@@ -61,7 +62,7 @@ def pick_box(boxes, score_threshold, hw, classes):
     clsid = idx[2]
     picked_boxes = nms_np(
         np.concatenate([box_xyxy, box_socre.reshape([-1, 1]), clsid.reshape([-1, 1])], -1),
-        len(classes))
+        len(classes), iou_threshold=nms_iou_threshold)
     return picked_boxes
 
 

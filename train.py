@@ -9,7 +9,7 @@ import tensorflow as tf
 from config.train_config import get_config
 from net.yolo3_net import loss, model
 from util.box_utils import box_anchor_iou, pick_box, xy2wh_np
-from util.image_utils import get_color_table, plot_rectangle, read_image_and_lable
+from util.image_utils import get_color_table, get_ori_box_and_plot, read_image_and_lable
 from util.utils import sec2time
 
 
@@ -220,18 +220,18 @@ class YOLO():
                 raw_, boxes, grid = pred_
                 vis_img = []
                 for b in range(self.batch_size):
-                    picked_boxes = pick_box(boxes[b], 0.3, self.hw, self.classes)
+                    picked_boxes = pick_box(boxes[b], 0.3, 0.3, self.hw, self.classes)
                     per_img = np.array(img[b] * 255, dtype=np.uint8)
                     # draw pred
                     per_img_ = per_img.copy()
-                    per_img_ = plot_rectangle(per_img_, picked_boxes, 1, 1, self.color_table, self.classes)
+                    _, per_img_ = get_ori_box_and_plot(per_img_, picked_boxes, 1, 1, self.color_table, self.classes)
                     vis_img.append(per_img_)
 
                     # draw gts
                     per_img_ = per_img.copy()
                     per_label = label[b]
-                    picked_boxes = pick_box(per_label[..., 4:], 0.3, self.hw, self.classes)
-                    per_img_ = plot_rectangle(per_img_, picked_boxes, 1, 1, self.color_table, self.classes, True)
+                    picked_boxes = pick_box(per_label[..., 4:], 0.3, 0.3, self.hw, self.classes)
+                    _, per_img_ = get_ori_box_and_plot(per_img_, picked_boxes, 1, 1, self.color_table, self.classes, True)
                     vis_img.append(per_img_)
 
                 # cal vaild_loss

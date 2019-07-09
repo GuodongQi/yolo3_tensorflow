@@ -94,19 +94,24 @@ def read_image_and_lable(gt_path, hw, anchor, hue=.1, sat=1.5, val=1.5):
 
 
 def get_color_table(class_num, seed=200):
-    random.seed(seed)
+    # random.seed(seed)
     color_table = {}
     for i in range(class_num):
         color_table[i] = [random.randint(0, 255) for _ in range(3)]
     return color_table
 
 
-def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes, is_gt=False):
+def get_ori_box_and_plot(img, picked_boxes, w_r, h_r, color_table, classes, is_gt=False):
+    """
+    get original boxes and plot them
+    """
+    true_boxes = []
     for co, bbox in enumerate(picked_boxes):
         bbox[0] *= w_r
         bbox[2] *= w_r
         bbox[1] *= h_r
         bbox[3] *= h_r
+        true_boxes.append(bbox)
         color = color_table[int(bbox[5])]
         tl = int(min(round(0.002 * max(img.shape[0:2])), min(bbox[3] - bbox[1], bbox[2] - bbox[0])))
         t2 = max(tl - 1, 1)  # font thickness
@@ -118,4 +123,5 @@ def plot_rectangle(img, picked_boxes, w_r, h_r, color_table, classes, is_gt=Fals
                             tuple(np.int32([bbox[2], bbox[3]])), color, 3)
         img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1]])),
                           cv2.FONT_HERSHEY_TRIPLEX, float(tl) / 3, color, thickness=t2, lineType=cv2.LINE_AA)
-    return img
+    true_boxes = np.concatenate(true_boxes, 0).reshape(-1, 6)
+    return true_boxes, img

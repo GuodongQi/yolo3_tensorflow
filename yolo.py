@@ -8,7 +8,7 @@ import tensorflow as tf
 from config.pred_config import get_config
 from net.yolo3_net import model
 from util.box_utils import pick_box
-from util.image_utils import get_color_table, plot_rectangle
+from util.image_utils import get_color_table, get_ori_box_and_plot
 
 
 class YOLO():
@@ -71,10 +71,11 @@ class YOLO():
 
         vis_img = []
         for b in range(1):
-            picked_boxes = pick_box(boxes[b], 0.3, self.hw, self.classes)
-            print('find {} boxes'.format(len(picked_boxes)))
+            picked_boxes = pick_box(boxes[b], 0.3, 0.3, self.hw, self.classes)
             per_img = img
-            per_img = plot_rectangle(per_img, picked_boxes, w_r, h_r, self.color_table, self.classes)
+            true_boxes, per_img = get_ori_box_and_plot(per_img, picked_boxes, w_r, h_r, self.color_table, self.classes)
+            print('find {} boxes'.format(len(picked_boxes)))
+            print(true_boxes)
             vis_img.append(per_img)
         return vis_img[0]
 
