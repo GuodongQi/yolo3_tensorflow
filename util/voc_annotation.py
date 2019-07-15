@@ -2,27 +2,37 @@ import os
 import random
 import xml.etree.ElementTree as ET
 
-classes = ['blood']
+class_path = 'model_data/voc_classes.txt'  # change to the classes path you want to detect
+is_train = True  # whether train dataset or valid dataset
 
-# wd = os.path.dirname(os.getcwd())
+if is_train:
+    image_dir = ''  # your train image dir
+    annotation_dir = ''  # your train image annotation  dir
+    gen_files = 'train.txt'
+else:
+    image_dir = ''  # your val image dir
+    annotation_dir = ''  # your val image annotation  dir
+    gen_files = 'valid.txt'
 
-wd = '/data2/qiguodong/python/'
+with open(class_path) as f:
+    class_names = f.readlines()
+classes = [c.strip() for c in class_names]
 
-list_file_train = open(wd + 'yolo3/model_data/train.txt', 'w')
+list_file_train = open(os.path.join('model_data', gen_files), 'w')
 
-annotation_files = os.listdir(os.path.join(wd, 'dataset', 'annotation'))
+annotation_files = os.listdir(annotation_dir)
 random.shuffle(annotation_files)
 
 for i in range(0, len(annotation_files), 1):
     annotation_file = annotation_files[i]
 
-    list_file_train.write(wd + 'dataset/image/%s.jpg' % (annotation_file.split('.')[0]))
+    list_file_train.write('%s/%s.jpg' % (image_dir, annotation_file.split('.')[0]))
 
-    mypath = os.path.join(wd, 'dataset', 'annotation', annotation_file)
+    xml_file = os.path.join(annotation_dir, annotation_file)
     try:
-        in_file = open(mypath, 'r')
+        in_file = open(xml_file, 'r')
     except:
-        print("open failed {0}".format(mypath))
+        print("open failed {0}".format(xml_file))
     else:
         # print("open success {0}".format(image_id))
         tree = ET.parse(in_file)
@@ -44,9 +54,9 @@ for i in range(0, len(annotation_files), 1):
 list_file_train.close()
 # list_file_val.close()
 # clean dataset
-with open(wd + '/model_data/train.txt', 'r') as f1:
+with open(os.path.join('model_data', gen_files), 'r') as f1:
     old_line = f1.readlines()
-with open(wd + '/model_data/train.txt', 'w') as f2:
+with open(os.path.join('model_data', gen_files), 'w') as f2:
     for line in old_line:
         line_ = line.split(' ')
         if len(line_) > 1:

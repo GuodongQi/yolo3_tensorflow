@@ -33,6 +33,8 @@ def get_config():
                       default=join(root, 'model_data', 'yolo_anchors.txt'))
     conf.add_argument('--train_path', type=str, help='train file path',
                       default=join(root, 'model_data', 'train.txt'))
+    conf.add_argument('--valid_path', type=str, help='valid file path',
+                      default=join(root, 'model_data', 'valid.txt'))
     conf.add_argument('--classes_path', type=str, help='classes path',
                       default=join(root, 'model_data', 'voc_classes.txt'))
 

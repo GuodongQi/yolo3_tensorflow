@@ -42,16 +42,9 @@ class YOLO():
         self.label = None
 
         with open(config.train_path) as f:
-            self.gts = f.readlines()
-        val_rate = 0.01
-        spl = int(val_rate * len(self.gts))
-
-        np.random.seed(1000)
-        np.random.shuffle(self.gts)
-        np.random.seed(None)
-
-        self.train_data = self.gts[spl:]
-        self.val_data = self.gts[:spl]
+            self.train_data = f.readlines()
+        with open(config.valid_path) as f:
+            self.val_data = f.readlines()
 
         self.color_table = get_color_table(len(self.classes))
 
