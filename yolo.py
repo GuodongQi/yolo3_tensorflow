@@ -93,11 +93,13 @@ class YOLO():
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise IOError("Couldn't open webcam or video")
-        video_FourCC = -1
+        # video_FourCC = -1
+        video_FourCC = cv2.VideoWriter_fourcc(*'XVID')
         video_fps = cap.get(cv2.CAP_PROP_FPS)
         width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        writer = cv2.VideoWriter('output.mp4', video_FourCC, video_fps, (width, height))
+        # writer = cv2.VideoWriter('output.mp4', video_FourCC, video_fps, (width, height))
+        writer = cv2.VideoWriter('output.avi', video_FourCC, video_fps, (width, height))
 
         total_time = 0
         curr_fps = 0
