@@ -36,7 +36,11 @@ class YOLO():
 
         print('start load net_type: {}_{}_model'.format(net_type, tiny))
         # load weights
-        conf = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+        conf = tf.ConfigProto()
+        # conf.gpu_options.allow_growth = True
+
+        # change fraction according to your GPU
+        conf.gpu_options.per_process_gpu_memory_fraction = 0.04
         self.sess = tf.Session(config=conf)
         saver = tf.train.Saver()
         saver.restore(self.sess, config.weight_path)
