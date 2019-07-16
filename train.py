@@ -75,11 +75,12 @@ class YOLO():
             img_files = []
             labels = []
             b = 0
-            while idx < len(gts):  # a batch
+            while idx < len(gts) - self.batch_size:  # a batch
                 try:
                     res = read_image_and_lable(gts[idx + b], self.hw, self.anchors)
+                    # print(idx + b)
                 except IndexError:
-                    b = 0
+                    raise Exception('it should not happen')
                 else:
                     if not res:
                         raise Exception('check your dataset, it has none label')
@@ -122,7 +123,7 @@ class YOLO():
                     if len(labels) == self.batch_size:
                         idx += self.batch_size
                         break
-            if idx >= len(gts):
+            if idx >= len(gts) - self.batch_size:
                 np.random.shuffle(gts)
                 idx = 0
             img_files, labels = np.array(img_files, np.float32), np.array(labels, np.float32)
@@ -150,7 +151,7 @@ class YOLO():
             op = opt.minimize(losses)
 
         # summary
-        writer = tf.summary.FileWriter(self.log_path)
+        writer = tf.summary.FileWriter(self.log_path, max_queue=-1)
         img_tensor = tf.placeholder(tf.float32, [2 * self.batch_size] + self.hw + [3])
         train_loss_tensor = tf.placeholder(tf.float32)
         val_loss_tensor = tf.placeholder(tf.float32)
@@ -164,7 +165,7 @@ class YOLO():
         # sess = tf_debug.LocalCLIDebugWrapperSession(sess)
         # sess = tf_debug.TensorBoardDebugWrapperSession(sess, "PC-DAIXILI:6001")
 
-        saver = tf.train.Saver(var_list=var_list, max_to_keep=1)
+        saver = tf.train.Saver(var_list=var_list, max_to_keep=10)
 
         # init
         init = tf.global_variables_initializer()
@@ -224,10 +225,11 @@ class YOLO():
                     per_img_ = per_img.copy()
                     per_label = label[b]
                     picked_boxes = pick_box(per_label[..., 4:], 0.3, 0.3, self.hw, self.classes)
-                    _, per_img_ = get_ori_box_and_plot(per_img_, picked_boxes, 1, 1, self.color_table, self.classes, True)
+                    _, per_img_ = get_ori_box_and_plot(per_img_, picked_boxes, 1, 1, self.color_table, self.classes,
+                                                       True)
                     vis_img.append(per_img_)
 
-                # cal vaild_loss
+                # cal valid_loss
                 val_loss_ = 0
                 val_step = 0
                 for val_data in self.generate_data(grid_shape, is_val=True):
@@ -248,8 +250,8 @@ class YOLO():
                     val_loss_tensor: val_loss_
                 })
                 writer.add_summary(ss, epoch)
-                saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model'), write_meta_graph=False,
-                           write_state=False)
+                saver.save(sess, join(self.log_path, split(self.log_path)[-1] + '_model_epoch_{}'.format(epoch)),
+                           write_meta_graph=False, write_state=False)
                 print('epoch:{} train_loss:{:< .3f} val_loss:{:< .3f}'.format(
                     epoch, losses_, val_loss_))
                 epoch += 1
