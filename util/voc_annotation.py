@@ -2,7 +2,8 @@ import os
 import random
 import xml.etree.ElementTree as ET
 
-class_path = 'model_data/voc_classes.txt'  # change to the classes path you want to detect
+wd = os.path.dirname(os.getcwd())
+class_path = os.path.join(wd, 'model_data', 'voc_classes.txt')  # change to the classes path you want to detect
 is_train = True  # whether train dataset or valid dataset
 
 if is_train:
@@ -18,7 +19,7 @@ with open(class_path) as f:
     class_names = f.readlines()
 classes = [c.strip() for c in class_names]
 
-list_file_train = open(os.path.join('model_data', gen_files), 'w')
+list_file_train = open(os.path.join(wd, 'model_data', gen_files), 'w')
 
 annotation_files = os.listdir(annotation_dir)
 random.shuffle(annotation_files)
@@ -54,9 +55,9 @@ for i in range(0, len(annotation_files), 1):
 list_file_train.close()
 # list_file_val.close()
 # clean dataset
-with open(os.path.join('model_data', gen_files), 'r') as f1:
+with open(os.path.join(wd, 'model_data', gen_files), 'r') as f1:
     old_line = f1.readlines()
-with open(os.path.join('model_data', gen_files), 'w') as f2:
+with open(os.path.join(wd, 'model_data', gen_files), 'w') as f2:
     for line in old_line:
         line_ = line.split(' ')
         if len(line_) > 1:

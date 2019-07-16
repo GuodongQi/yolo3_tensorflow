@@ -123,5 +123,7 @@ def get_ori_box_and_plot(img, picked_boxes, w_r, h_r, color_table, classes, is_g
                             tuple(np.int32([bbox[2], bbox[3]])), color, 3)
         img = cv2.putText(img, label, tuple(np.int32([bbox[0], bbox[1]])),
                           cv2.FONT_HERSHEY_TRIPLEX, float(tl) / 3, color, thickness=t2, lineType=cv2.LINE_AA)
+    if not len(true_boxes):
+        return true_boxes, img
     true_boxes = np.concatenate(true_boxes, 0).reshape(-1, 6)
     return true_boxes, img
