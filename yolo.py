@@ -32,7 +32,8 @@ class YOLO():
                 self.anchors), 'the model type does not match with anchors, check anchors or type param'
 
         self.input = tf.placeholder(tf.float32, [1] + self.hw + [3])
-        self.pred = model(self.input, len(self.classes), self.anchors, net_type, False)
+        self.is_training = tf.placeholder(tf.bool, shape=[])
+        self.pred = model(self.input, len(self.classes), self.anchors, net_type, self.is_training, False)
 
         print('start load net_type: {}_{}_model'.format(net_type, tiny))
         # load weights
@@ -71,11 +72,11 @@ class YOLO():
         w_r = width / self.hw[1]
 
         im_data = np.expand_dims(img_[..., ::-1], 0) / 255.0
-        boxes = self.sess.run(self.pred, feed_dict={self.input: im_data})
+        boxes = self.sess.run(self.pred, feed_dict={self.input: im_data, self.is_training: False})
 
         vis_img = []
         for b in range(1):
-            picked_boxes = pick_box(boxes[b], 0.3, 0.3, self.hw, self.classes)
+            picked_boxes = pick_box(boxes[b], 0.3, 0.6, self.hw, self.classes)
             per_img = img
             true_boxes, per_img = get_ori_box_and_plot(per_img, picked_boxes, w_r, h_r, self.color_table, self.classes)
             print('find {} boxes'.format(len(picked_boxes)))

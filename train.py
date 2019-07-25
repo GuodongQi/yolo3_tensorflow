@@ -38,7 +38,7 @@ class YOLO():
         self.pretrain_path = config.pretrain_path
 
         self.input = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
-
+        self.is_training = tf.placeholder(tf.bool, shape=[])
         self.label = None
 
         with open(config.train_path) as f:
@@ -134,7 +134,7 @@ class YOLO():
 
     def train(self):
         # pred, losses, op = self.create_model()
-        pred = model(self.input, len(self.classes), self.anchors, config.net_type, True)
+        pred = model(self.input, len(self.classes), self.anchors, config.net_type, self.is_training, True)
         grid_shape = [g.get_shape().as_list() for g in pred[2]]
 
         s = sum([g[2] * g[1] for g in grid_shape])
@@ -175,7 +175,7 @@ class YOLO():
             try:
                 print('try to restore the whole graph')
                 saver.restore(sess, self.pretrain_path)
-            except:
+            except():
                 print('failed to restore the whole graph')
                 flag = 1
             if flag:
@@ -202,7 +202,8 @@ class YOLO():
             img, label, idx = data
             pred_, losses_, _ = sess.run([pred, losses, op], {
                 self.input: img,
-                self.label: label
+                self.label: label,
+                self.is_training: True
             })
             t1 = time.time()
             print('step:{:<d}/{} epoch:{} loss:{:< .3f} ETA:{}'.format(
@@ -236,7 +237,8 @@ class YOLO():
                     img, label = val_data
                     _, losses__ = sess.run([pred, losses], {
                         self.input: img,
-                        self.label: label
+                        self.label: label,
+                        self.is_training: False
                     })
                     val_loss_ += losses__
                     val_step += self.batch_size

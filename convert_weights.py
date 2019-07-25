@@ -25,7 +25,7 @@ def convert(is_tiny=False):
         makedirs(split(save_path)[0])
     input_data = tf.placeholder(dtype=tf.float32, shape=(1, 416, 416, 3))
 
-    model(input_data, 80, anchors, 'cnn', False)
+    model(input_data, 80, anchors, 'cnn', True, False)
 
     model_vars_ = tf.global_variables()
     assert weight_path.endswith('.weights'), '{} is not a .weights files'.format(weight_path)
