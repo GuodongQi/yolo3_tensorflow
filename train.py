@@ -175,7 +175,7 @@ class YOLO():
             try:
                 print('try to restore the whole graph')
                 saver.restore(sess, self.pretrain_path)
-            except():
+            except:
                 print('failed to restore the whole graph')
                 flag = 1
             if flag:
