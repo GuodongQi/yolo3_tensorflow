@@ -48,8 +48,8 @@ for i in range(0, len(annotation_files), 1):
             xmlbox = obj.find('bndbox')
             b = (int(xmlbox.find('xmin').text), int(xmlbox.find('ymin').text), int(xmlbox.find('xmax').text),
                  int(xmlbox.find('ymax').text))
-            # list_file.write(" " + ",".join([str(a) for a in b]) + ',' + str(cls_id))
-            list_file_train.write(" " + ",".join([str(a) for a in b]) + ',' + str(0))
+            list_file.write(" " + ",".join([str(a) for a in b]) + ',' + str(cls_id))
+            # list_file_train.write(" " + ",".join([str(a) for a in b]) + ',' + str(0))
     list_file_train.write('\n')
 
 list_file_train.close()
