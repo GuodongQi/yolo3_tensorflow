@@ -184,24 +184,24 @@ def full_darknet_body(x, net_type, is_training):
         # down sample
         x = conv_block(x, [3, 3], [2, 2], 64, net_type, is_training=is_training)
         for i in range(2):
-            x = residual(x, net_type, 64, 1)
+            x = residual(x, net_type, is_training, 64, 1)
 
         # down sample
         x = conv_block(x, [3, 3], [2, 2], 96, net_type, is_training=is_training)
         for i in range(4):
-            x = residual(x, net_type, 96, 6)
+            x = residual(x, net_type,is_training, 96, 6)
         route2 = x
 
         # down sample
         x = conv_block(x, [3, 3], [2, 2], 160, net_type, is_training=is_training)
         for i in range(4):
-            x = residual(x, net_type, 160, 6)
+            x = residual(x, net_type, is_training, 160, 6)
         route1 = x
 
         # down sample
         x = conv_block(x, [3, 3], [2, 2], 320, net_type, is_training=is_training)
         for i in range(3):
-            x = residual(x, net_type, 320, 1)
+            x = residual(x, net_type, is_training, 320, 1)
 
     else:
         route1, route2 = [], []
