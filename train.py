@@ -47,7 +47,7 @@ class YOLO():
         self.label = None
 
         with open(self.config.train_path) as f:
-            self.train_data = f.readlines()[:8]
+            self.train_data = f.readlines()
         with open(self.config.valid_path) as f:
             self.val_data = f.readlines()
 
