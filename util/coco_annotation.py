@@ -4,17 +4,15 @@ from collections import defaultdict
 
 wd = os.path.dirname(os.getcwd())
 class_path = os.path.join(wd, 'model_data', 'coco_classes.txt')  # change to the classes path you want to detect
-is_train = 0  # whether train dataset or valid dataset
+is_train = 1  # whether train dataset or valid dataset
 
 if is_train:
-    image_dir = 'F:\\coco\\train2014'  # your train image dir
-    annotation_file = 'F:\\coco\\annotations\\instances_train2014.json'  # your train image annotation  dir
-    prefix = 'COCO_train2014'
+    image_dir = '/media/data1/datasets/coco/train2017'  # your train image dir
+    annotation_file = '/media/data1/datasets/coco/annotations/instances_train2017.json'  # your train image annotation  dir
     gen_files = 'train.txt'
 else:
-    image_dir = 'F:\\coco\\val2014'  # your val image dir
-    annotation_file = 'F:\\coco\\annotations\\instances_val2014.json'  # your val image annotation  dir
-    prefix = 'COCO_val2014'
+    image_dir = '/media/data1/datasets/coco/val2017'  # your val image dir
+    annotation_file = '/media/data1/datasets/coco/annotations/instances_val2017.json'  # your val image annotation  dir
     gen_files = 'valid.txt'
 
 name_box_id = defaultdict(list)
@@ -31,7 +29,7 @@ annotations = data['annotations']
 
 for ant in annotations:
     image_id = ant['image_id']
-    image_path = os.path.join(image_dir, prefix + '_%012d.jpg' % image_id)
+    image_path = os.path.join(image_dir,  '%012d.jpg' % image_id)
     cat = ant['category_id']
 
     if 1 <= cat <= 11:

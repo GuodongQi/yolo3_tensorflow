@@ -7,13 +7,15 @@ import tensorflow as tf
 
 from config.pred_config import get_config
 from net.yolo3_net import model
-from util.box_utils import pick_box
-from util.image_utils import get_color_table, get_ori_box_and_plot
+from util.box_utils import pick_box, get_true_box
+from util.image_utils import get_color_table, plot_img
 
 
 class YOLO():
-    def __init__(self):
-        net_type, tiny = split(config.weight_path)[-1].split('_')[:2]
+    def __init__(self, config):
+        self.config = config
+
+        net_type, tiny = split(self.config.weight_path)[-1].split('_')[:2]
 
         if tiny == 'tiny':
             self.anchor_path = join('model_data', 'yolo_anchors_tiny.txt')
@@ -23,6 +25,7 @@ class YOLO():
         self.classes = self._get_classes()
         self.anchors = self._get_anchors()
         self.hw = [416, 416]
+        self.batch_size = 1
 
         if tiny == 'tiny':
             assert 6 == len(
@@ -31,7 +34,7 @@ class YOLO():
             assert 9 == len(
                 self.anchors), 'the model type does not match with anchors, check anchors or type param'
 
-        self.input = tf.placeholder(tf.float32, [1] + self.hw + [3])
+        self.input = tf.placeholder(tf.float32, [self.batch_size] + self.hw + [3])
         self.is_training = tf.placeholder(tf.bool, shape=[])
         self.pred = model(self.input, len(self.classes), self.anchors, net_type, self.is_training, False)
 
@@ -41,10 +44,10 @@ class YOLO():
         # conf.gpu_options.allow_growth = True
 
         # change fraction according to your GPU
-        conf.gpu_options.per_process_gpu_memory_fraction = 0.04
+        conf.gpu_options.per_process_gpu_memory_fraction = 0.05
         self.sess = tf.Session(config=conf)
         saver = tf.train.Saver()
-        saver.restore(self.sess, config.weight_path)
+        saver.restore(self.sess, self.config.weight_path)
         self.color_table = get_color_table(len(self.classes))
 
     def _get_anchors(self):
@@ -56,7 +59,7 @@ class YOLO():
 
     def _get_classes(self):
         """loads the classes"""
-        with open(config.classes_path) as f:
+        with open(self.config.classes_path) as f:
             class_names = f.readlines()
         class_names = [c.strip() for c in class_names]
         return class_names
@@ -75,11 +78,12 @@ class YOLO():
         boxes = self.sess.run(self.pred, feed_dict={self.input: im_data, self.is_training: False})
 
         vis_img = []
-        for b in range(1):
+        for b in range(self.batch_size):
             picked_boxes = pick_box(boxes[b], 0.3, 0.6, self.hw, self.classes)
+            true_boxes = get_true_box(picked_boxes, w_r, h_r)
             per_img = img
-            true_boxes, per_img = get_ori_box_and_plot(per_img, picked_boxes, w_r, h_r, self.color_table, self.classes)
-            print('find {} boxes'.format(len(picked_boxes)))
+            per_img = plot_img(per_img, true_boxes, self.color_table, self.classes)
+            print('find {} boxes'.format(len(true_boxes)))
             print(true_boxes)
             vis_img.append(per_img)
         return vis_img[0]
@@ -137,12 +141,12 @@ class YOLO():
 
 
 if __name__ == '__main__':
-    config = get_config()
-    yolo = YOLO()
-    if config.video:
-        yolo.detect_video(config.video)
-    elif config.image:
-        yolo.detect_image(config.image)
+    configs = get_config()
+    yolo = YOLO(configs)
+    if configs.video:
+        yolo.detect_video(configs.video)
+    elif configs.image:
+        yolo.detect_image(configs.image)
     else:
         while True:
             img_path = input('input image path:')

@@ -12,7 +12,7 @@ def get_config():
 
     # load weight_path
     conf.add_argument('-w', '--weight_path', type=str, help='weight path',
-                      default='logs/cnn_full/cnn_full_model')
+                      default='logs/cnn_full/cnn_full_model_epoch_20')
 
     conf.add_argument('--score', default=0.3, type=float, help='score threshold')
 

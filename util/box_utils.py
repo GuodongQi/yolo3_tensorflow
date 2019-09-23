@@ -181,6 +181,36 @@ def box_iou(b1, b2):
     return iou
 
 
+def box_iou_np(b1, b2):
+    """
+    Return iou tensor
+    Parameters
+    ----------
+    b1: array shape=(i, 4), xyxy
+    b2: array, shape=(j, 4), xyxy
+    Returns
+    -------
+    iou: array, shape=(i1,...,iN, j)
+    """
+
+    # Expand dim to apply broadcasting.
+    b1 = np.expand_dims(b1[...,:4], -2)
+
+    # Expand dim to apply broadcasting.
+    b2 = np.expand_dims(b2[...,:4], 0)
+
+    intersect_mins = np.maximum(b1[...,0:2], b2[...,0:2])
+    intersect_maxes = np.minimum(b1[...,2:4], b2[...,2:4])
+    intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
+    intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
+    b1_area = (b1[..., 2] - b1[..., 0]) * (b1[..., 3] - b1[..., 1])
+    b2_area = (b2[..., 2] - b2[..., 0]) * (b2[..., 3] - b2[..., 1])
+    iou = intersect_area / (b1_area + b2_area - intersect_area)
+
+    return iou
+
+
+
 def xy2wh(b):
     """
     :param b: shape=(...,4) xmin ymin xmax ymax
@@ -211,6 +241,20 @@ def np_sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
+def get_true_box(picked_boxes, w_r, h_r):
+    """ get original true box according to ori image scale"""
+    true_boxes = []
+    for co, bbox in enumerate(picked_boxes):
+        bbox[0] *= w_r
+        bbox[2] *= w_r
+        bbox[1] *= h_r
+        bbox[3] *= h_r
+        true_boxes.append(bbox)
+    if not len(true_boxes):
+        return true_boxes
+    true_boxes = np.concatenate(true_boxes, 0).reshape(-1, 6)
+    return true_boxes
+
 if __name__ == '__main__':
-    b = tf.placeholder(tf.float32, [2, 4, 4])
-    xy2wh(b)
+    bx = tf.placeholder(tf.float32, [2, 4, 4])
+    xy2wh(bx)
