@@ -13,8 +13,8 @@ These 5 frameworks are provided in this repository.
 
 ## Dependence
  python3  
- tensorflow >= 1.12  
- opencv  
+ tensorflow == 1.13  
+ opencv3  
 
 ## Quick start
 * cnn full yolo3
