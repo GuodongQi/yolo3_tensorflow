@@ -13,7 +13,7 @@ wd = os.path.dirname(os.getcwd())
 class_path = os.path.join(wd, 'model_data', 'coco_classes.txt')  # change to the classes path you want to detect
 
 width_height = (608, 608)  # the input image size
-total_task = 10  # multi-process pool number
+total_task = 30  # multi-process pool number
 num_shards = 4000  # Number of shards in training TFRecord files
 is_train = True  # whether train dataset or valid dataset
 
@@ -97,14 +97,15 @@ def add_to_tfrecord(img_path, box_info, coder, writer):
 
     image_path = os.path.join(image_dir, img_path)
     image_data = cv2.imread(image_path)[:, :, ::-1]
+    _height, _width = image_data.shape[:2]
     image_scaled = cv2.resize(image_data, width_height)
     image_decode = coder.encode_jpeg(image_scaled)
     boxes = []
     for info in box_info:
-        x_min = int(info[0][0])
-        y_min = int(info[0][1])
-        x_max = x_min + int(info[0][2])
-        y_max = y_min + int(info[0][3])
+        x_min = int(info[0][0] / _width * width_height[0])
+        y_min = int(info[0][1] / _height * width_height[1])
+        x_max = x_min + int(info[0][2] / _width * width_height[0])
+        y_max = y_min + int(info[0][3] / _height * width_height[1])
         boxes.append([x_min, y_min, x_max, y_max, int(info[1])])
 
     label = np.hstack(boxes)

@@ -74,6 +74,11 @@ def add_to_tfrecord(xml_file, coder, writer):
 
         boxes = []
 
+        image_path = '%s/%s.jpg' % (image_dir, os.path.basename(xml_file).split('.')[0])
+        image_data = cv2.imread(image_path)[:, :, ::-1]
+        _height, _width = image_data.shape[:2]
+        image_scaled = cv2.resize(image_data, width_height)
+
         for obj in root.iter('object'):
             difficult = obj.find('difficult').text
             cls = obj.find('name').text
@@ -81,15 +86,15 @@ def add_to_tfrecord(xml_file, coder, writer):
                 continue
             cls_id = classes.index(cls)
             xmlbox = obj.find('bndbox')
-            b = [int(xmlbox.find('xmin').text), int(xmlbox.find('ymin').text), int(xmlbox.find('xmax').text),
-                 int(xmlbox.find('ymax').text), cls_id]
+            b = [int(int(xmlbox.find('xmin').text) / _width * width_height[0]),
+                 int(int(xmlbox.find('ymin').text) / _height * width_height[1]),
+                 int(int(xmlbox.find('xmax').text) / _width * width_height[0]),
+                 int(int(xmlbox.find('ymax').text) / _height * width_height[1]),
+                 cls_id]
             boxes.append(b)
         if not len(boxes):
             return False
 
-        image_path = '%s/%s.jpg' % (image_dir, os.path.basename(xml_file).split('.')[0])
-        image_data = cv2.imread(image_path)[:, :, ::-1]
-        image_scaled = cv2.resize(image_data, width_height)
         image_decode = coder.encode_jpeg(image_scaled)
         label = np.hstack(boxes)
         example = convert_to_example(image_decode, image_path, width_height[1], width_height[0], label)

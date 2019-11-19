@@ -34,6 +34,41 @@ def box_anchor_iou(b1, b2):
     return iou
 
 
+def box_anchor_iou_tf(b1, b2):
+    '''Return iou tensor
+    Parameters
+    ----------
+    b1: tensor, shape=(batch,... 2), wh
+    b2: tensor, shape=(j, 2), wh
+    Returns
+    -------
+    iou: tensor, shape=(i1,...,iN, j)
+    '''
+
+    # Expand dim to apply broadcasting.
+    b1 = tf.cast(b1, tf.float32)
+    b2 = tf.cast(b2, tf.float32)
+
+    b1 = tf.expand_dims(b1, -2)
+    b1_mins = - b1 / 2
+    b1_maxes = b1 / 2
+
+    # Expand dim to apply broadcasting.
+    b2 = tf.expand_dims(b2, 0)
+    b2_mins = -b2 / 2
+    b2_maxes = b2 / 2
+
+    intersect_mins = tf.maximum(b1_mins, b2_mins)
+    intersect_maxes = tf.minimum(b1_maxes, b2_maxes)
+    intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
+    intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
+    b1_area = b1[..., 0] * b1[..., 1]
+    b2_area = b2[..., 0] * b2[..., 1]
+    iou = intersect_area / (b1_area + b2_area - intersect_area)
+
+    return iou
+
+
 def pick_box(boxes, score_threshold, nms_iou_threshold, hw, classes):
     """
     :param boxes: (boxes_num, 5+numclass),xywh
@@ -194,13 +229,13 @@ def box_iou_np(b1, b2):
     """
 
     # Expand dim to apply broadcasting.
-    b1 = np.expand_dims(b1[...,:4], -2)
+    b1 = np.expand_dims(b1[..., :4], -2)
 
     # Expand dim to apply broadcasting.
-    b2 = np.expand_dims(b2[...,:4], 0)
+    b2 = np.expand_dims(b2[..., :4], 0)
 
-    intersect_mins = np.maximum(b1[...,0:2], b2[...,0:2])
-    intersect_maxes = np.minimum(b1[...,2:4], b2[...,2:4])
+    intersect_mins = np.maximum(b1[..., 0:2], b2[..., 0:2])
+    intersect_maxes = np.minimum(b1[..., 2:4], b2[..., 2:4])
     intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
     intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
     b1_area = (b1[..., 2] - b1[..., 0]) * (b1[..., 3] - b1[..., 1])
@@ -208,7 +243,6 @@ def box_iou_np(b1, b2):
     iou = intersect_area / (b1_area + b2_area - intersect_area)
 
     return iou
-
 
 
 def xy2wh(b):
@@ -254,6 +288,7 @@ def get_true_box(picked_boxes, w_r, h_r):
         return true_boxes
     true_boxes = np.concatenate(true_boxes, 0).reshape(-1, 6)
     return true_boxes
+
 
 if __name__ == '__main__':
     bx = tf.placeholder(tf.float32, [2, 4, 4])
