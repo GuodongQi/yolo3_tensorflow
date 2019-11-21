@@ -73,14 +73,18 @@ def conv_block(x, filters, stride, out_channel, net_type, is_training, name='', 
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
                 x = tf.layers.batch_normalization(x, training=is_training)
                 x = tf.nn.relu6(x)
+                print("Activation function : relu6")
             with tf.name_scope('depthwise'):
                 depthwise_weight = tf.Variable(xavier_initializer([filters[0], filters[1], tmp_channel, 1]))
                 x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride[0], stride[1], 1], 'SAME')
+                x = tf.layers.batch_normalization(x, training=is_training)
+                x = tf.nn.relu6(x)
             with tf.name_scope('project_pointwise'):
                 pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
                 x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
                 if relu:
                     x = tf.layers.batch_normalization(x, training=is_training)
+                    #x = tf.nn.relu6(x)
                 else:
                     bias = tf.Variable(tf.zeros(shape=out_channel))
                     x += bias
@@ -97,23 +101,27 @@ def residual(x, net_type, is_training, out_channel=1, expand_time=1, stride=1):
         x = conv_block(x, [3, 3], [1, 1], out_channel, net_type='cnn', is_training=is_training)
         x += shortcut
 
-    elif net_type == 'mobilenetv2':
+    elif net_type == 'mobilenetv2':#倒置残差块 Inverted Residuals
         shortcut = x
         in_channel = x.shape[3].value
         tmp_channel = in_channel * expand_time
-        with tf.name_scope('expand_pointwise'):
+        with tf.name_scope('expand_pointwise'):#点卷积 拓展，生成一个高维信息域 参考《深度可分离卷积文档》
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, in_channel, tmp_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
             x = tf.layers.batch_normalization(x, training=is_training)
             x = tf.nn.relu6(x)
-        with tf.name_scope('depthwise'):
+        with tf.name_scope('depthwise'):#深度卷积 
             depthwise_weight = tf.Variable(xavier_initializer([3, 3, tmp_channel, 1]))
             x = tf.nn.depthwise_conv2d(x, depthwise_weight, [1, stride, stride, 1], 'SAME')
-        with tf.name_scope('project_pointwise'):
+            x = tf.layers.batch_normalization(x, training=is_training)
+            x = tf.nn.relu6(x)
+        with tf.name_scope('project_pointwise'):#点卷积
             pointwise_weight = tf.Variable(xavier_initializer([1, 1, tmp_channel, out_channel]))
             x = tf.nn.conv2d(x, pointwise_weight, [1, 1, 1, 1], 'SAME')
             x = tf.layers.batch_normalization(x, training=is_training)
-        x += shortcut
+            #不用激活函数，线性激活 避免信息丢失  
+            #x = tf.nn.relu6(x)
+        x += shortcut#快捷链接 避免梯度消失 
 
     return x
 
@@ -139,7 +147,7 @@ def full_yolo_body(x, out_channel, net_type, is_training):
     return x_route, x
 
 
-def full_darknet_body(x, net_type, is_training):
+def full_darknet_body(x, net_type, is_training):#特征检测网络 
     """
     yolo3_tiny build by net_type
     :param x:
@@ -177,32 +185,41 @@ def full_darknet_body(x, net_type, is_training):
         for i in range(4):
             x = residual(x, net_type, is_training)
 
-    elif net_type == 'mobilenetv2':
-        # down sample
-        x = conv_block(x, [3, 3], [2, 2], 32, 'cnn', is_training=is_training)
+    elif net_type == 'mobilenetv2':#
 
-        # down sample
-        x = conv_block(x, [3, 3], [2, 2], 64, net_type, is_training=is_training)
-        for i in range(2):
-            x = residual(x, net_type, is_training, 64, 1)
-
-        # down sample
-        x = conv_block(x, [3, 3], [2, 2], 96, net_type, is_training=is_training)
-        for i in range(4):
-            x = residual(x, net_type,is_training, 96, 6)
+        print('MobileNet V2 ------------------ input image batch’s shape:',x.shape)
+	#x 为   416×416 图像  标准的mobilnet v2 输入为 224 ×224有一定差异  
+        x = conv_block(x, [3, 3], [2, 2], 32, 'cnn', is_training=is_training)	#conv2d正常卷积，输出208×208×32通道
+        
+        print('1 ------------------ input image batch’s shape:',x.shape)
+        x = conv_block(x, [3, 3], [2, 2], 16, net_type, is_training=is_training) #残差块卷积，输出104×104×16 下采样
+        x = conv_block(x, [3, 3], [1, 1], 24, net_type, is_training=is_training) #残差块卷积，输出104×104×24
+        x = residual(x, net_type, is_training, 24, 1)#残差块卷积，输出104×104×24
+        x = conv_block(x, [3, 3], [2, 2], 32, net_type, is_training=is_training) #残差块卷积，输出52×52×32   下采样
+        #print('2 ------------------ input image batch’s shape:',x.shape)
+        for i in range(2):# 残差块卷积 输出 52×52×32
+            x = residual(x, net_type, is_training, 32, 1)
+        #print('21 ------------------ input image batch’s shape:',x.shape)
+        print('ROUTE2 ------------------ batch’s shape:',x.shape)	
         route2 = x
 
-        # down sample
-        x = conv_block(x, [3, 3], [2, 2], 160, net_type, is_training=is_training)
-        for i in range(4):
-            x = residual(x, net_type, is_training, 160, 6)
+        #print('4 ------------------ input image batch’s shape:',x.shape)
+        x = conv_block(x, [3, 3], [2, 2], 64, net_type, is_training=is_training)#残差块卷积，输出26×26×64   下采样
+        for i in range(3):# 残差块卷积 输出 26×26×64  
+            x = residual(x, net_type, is_training, 64, 6)
+        x = conv_block(x, [3, 3], [1, 1], 96, net_type, is_training=is_training)#残差块卷积，输出26×26×96   更改输出通道
+        for i in range(2):# 残差块卷积 输出 26×26×64  
+            x = residual(x, net_type, is_training, 96, 6)
+        print('ROUTE1 ------------------ batch’s shape:',x.shape)
         route1 = x
 
         # down sample
-        x = conv_block(x, [3, 3], [2, 2], 320, net_type, is_training=is_training)
-        for i in range(3):
-            x = residual(x, net_type, is_training, 320, 1)
-
+        print('5 ------------------ input image batch’s shape:',x.shape)
+        x = conv_block(x, [3, 3], [2, 2], 160, net_type, is_training=is_training)#残差块卷积，输出13×13×160 下采样
+        for i in range(2):
+            x = residual(x, net_type, is_training, 160, 1)
+        x = conv_block(x, [3, 3], [1, 1], 320, net_type, is_training=is_training)#残差块卷积，输出13×13×320 更改输出通道
+        print('Final ------------------ batch’s shape:',x.shape)
     else:
         route1, route2 = [], []
     return x, route1, route2
